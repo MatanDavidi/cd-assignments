@@ -712,7 +712,10 @@ let rec append (l1:'a list) (l2:'a list) : 'a list =
   you might want to call append.  Do not use the library function.
 *)
 let rec rev (l:'a list) : 'a list =
-  failwith "rev unimplemented"
+  begin match l with
+  | [] -> []
+  | l :: ls -> append (rev ls) [l]
+  end
 
 (*
   Problem 3-4
@@ -726,7 +729,8 @@ let rec rev (l:'a list) : 'a list =
 let rev_t (l: 'a list) : 'a list =
   let rec rev_aux l acc =
     begin match l with
-      | _ -> failwith "rev_t unimplemented"
+      | [] -> acc
+      | l :: ls -> rev_aux ls (l :: acc)
     end
   in
   rev_aux l []
@@ -746,8 +750,12 @@ let rev_t (l: 'a list) : 'a list =
   evaluates to true or false.
 *)
 let rec insert (x:'a) (l:'a list) : 'a list =
-  failwith "insert unimplemented"
-
+  let rec ins_aux (x:'a) (l:'a list) (acc:'a list) =
+    begin match l with
+      | []      -> append acc [x]
+      | l :: ls -> if x == l then append acc (l::ls) else (if x < l then append acc (x :: (l::ls)) else ins_aux x ls (append acc [l]))
+    end
+  in ins_aux x l []
 
 (*
   Problem 3-6
@@ -757,7 +765,16 @@ let rec insert (x:'a) (l:'a list) : 'a list =
   Hint: you might want to use the insert function that you just defined.
 *)
 let rec union (l1:'a list) (l2:'a list) : 'a list =
-  failwith "union unimplemented"
+  let rec union_aux l1 l2 acc =
+    begin match l1 with
+    | [] -> append acc l2
+    | l :: ls -> begin 
+      match l2 with
+        | [] -> append acc l1
+        | l' :: ls' -> if l < l' then (union_aux ls l2 (insert l acc)) else (if l > l' then (union_aux l1 ls' (insert l' acc)) else (union_aux ls ls' (insert l' acc)))
+      end
+    end
+  in union_aux l1 l2 []
 
 
 
@@ -848,7 +865,13 @@ let e3 : exp = Mult(Var "y", Mult(e2, Neg e2))     (* "y * ((x+1) * -(x+1))" *)
   Hint: you probably want to use the 'union' function you wrote for Problem 3-5.
 *)
 let rec vars_of (e:exp) : string list =
-  failwith "vars_of unimplemented"
+  begin match e with
+  | Var v -> [v]
+  | Const _ -> []
+  | Add (e1, e2)
+  | Mult (e1, e2) -> union (vars_of e1) (vars_of e2)
+  | Neg e -> vars_of e
+  end
 
 
 (*
@@ -867,7 +890,18 @@ let rec vars_of (e:exp) : string list =
 *)
 
 let rec string_of (e:exp) : string =
-  failwith "string_of unimplemented"
+  begin match e with
+  | Var v -> v
+  | Const l -> Int64.to_string l
+  | Add (e1, e2) -> "(" ^ (string_of e1) ^ " + " ^ (string_of e2) ^ ")"
+  | Mult (e1, e2) -> "(" ^ (string_of e1) ^ " * " ^ (string_of e2) ^ ")"
+  | Neg e ->
+    begin match e with
+    | Const _ -> "-" ^ (string_of e)
+    | Var _ -> "-" ^ (string_of e)
+    | _ -> "-(" ^ (string_of e) ^ ")"
+    end
+  end
 
 (*
   How should we _interpret_ (i.e. give meaning to) an expression?
@@ -928,7 +962,10 @@ let ctxt2 : ctxt = [("x", 2L); ("y", 7L)]  (* maps "x" to 2L, "y" to 7L *)
   such value, it should raise the Not_found exception.
 *)
 let rec lookup (x:string) (c:ctxt) : int64 =
-  failwith "unimplemented"
+  begin match c with
+  | [] -> raise Not_found
+  | (var, value) :: cs -> if compare x var == 0 then value else lookup x cs
+  end
 
 
 (*
@@ -955,7 +992,13 @@ let rec lookup (x:string) (c:ctxt) : int64 =
 *)
 
 let rec interpret (c:ctxt) (e:exp) : int64 =
-  failwith "unimplemented"
+  begin match e with
+  | Var x         -> lookup x c
+  | Const v       -> v
+  | Add (e1, e2)  -> Int64.add (interpret c e1) (interpret c e2)
+  | Mult (e1, e2) -> Int64.mul (interpret c e1) (interpret c e2)
+  | Neg e         -> Int64.neg (interpret c e)
+  end
 
 
 (*
@@ -1001,7 +1044,36 @@ let rec interpret (c:ctxt) (e:exp) : int64 =
 *)
 
 let rec optimize (e:exp) : exp =
-  failwith "optimize unimplemented"
+  begin match e with
+    | Var _
+    | Const _       -> e
+    | Add (e1, e2)  -> 
+      let opt_e1 = optimize e1 in
+      let opt_e2 = optimize e2 in
+      begin match (opt_e1, opt_e2) with 
+        | (Const 0L, _)      -> opt_e2
+        | (_, Const 0L)      -> opt_e1
+        | (Const x, Const y)  -> Const (Int64.add x y)
+        | _                   -> Add (opt_e1, opt_e2)
+      end
+    | Mult (e1, e2) -> 
+      let opt_e1 = optimize e1 in
+      let opt_e2 = optimize e2 in
+      begin match (opt_e1, opt_e2) with
+        | (Const 0L, _)       -> Const 0L
+        | (_, Const 0L)       -> Const 0L
+        | (Const x, Const y)  -> Const (Int64.mul x y)
+        | (_, _) -> Mult (opt_e1, opt_e2)
+      end
+    | Neg e         -> 
+      let opt_e = optimize e in
+      begin match opt_e with
+      | Neg e' -> e'
+      | Const 0L -> Const 0L
+      | Const c -> Const (Int64.neg c)
+      | _ -> Neg opt_e
+      end
+  end
 
 
 (******************************************************************************)
@@ -1145,9 +1217,41 @@ let ans1 = run [] p1
    - You should test the correctness of your compiler on several examples.
 *)
 let rec compile (e:exp) : program =
-  failwith "compile unimplemented"
+  begin match e with
+  | Var x -> [IPushV x]
+  | Const c -> [IPushC c]
+  | Add (e1, e2) -> append (append (compile e1) (compile e2)) [IAdd]
+  | Mult (e1, e2) -> append (append (compile e1) (compile e2)) [IMul]
+  | Neg e -> (IPushC (Int64.neg 1L)) :: (append (compile e) [IMul])
+  end
 
+(*******************************************)
+(*                                         *)
+(* CUSTOM PART: Testing fields and members *)
+(*                                         *)
+(*******************************************)
 
+  let sm_ctxt1 : ctxt = [("x", 1L)]
+  let sm_ctxt2 : ctxt = [("x", 3L); ("y", 2L)]
+  let sm_ctxt3 : ctxt = [("x", 2L); ("y", 3L); ("z", 1L)]
+  let sm_ctxt4 : ctxt = [("x", 4L)]
+  let sm_ctxt5 : ctxt = [("x", 10L)]
+  let sm_ctxt6 : ctxt = [("x", 3L)]
+  let sm_ctxt7 : ctxt = [("x", 1L); ("y", 2L)]
+
+  let p1 : exp = (Var "x")
+  let p2 : exp = (Const 9L)
+  let p3 : exp = (Add (Const 1L, Const 2L))
+  let p4 : exp = (Add (Var "x", Const 2L))
+  let p5 : exp = (Add (Const 1L, Var "y"))
+  let p6 : exp = (Add (Var "x", Var "y"))
+  let p7 : exp = Add (Const 1L, Const 2L)
+  let p8 : exp = Mult (Var "x", Const 3L)
+  let p9 : exp = Neg (Add (Var "x", Const 5L))
+  let p10 : exp = Mult (Add (Var "x", Const 2L), Neg (Var "x"))
+  let p11 : exp = Var "y"
+  let p12 : exp = Mult(Neg((Mult (Add (Var "x", Const 2L), Neg (Var "y")))), Mult (Add (Var "y", Const 2L), Neg (Var "x")))
+  let p13 : exp = Add(Const 1L, Mult(Const 1L, Const 1L))
 
 (************)
 (* Epilogue *)

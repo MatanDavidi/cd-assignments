@@ -895,12 +895,7 @@ let rec string_of (e:exp) : string =
   | Const l -> Int64.to_string l
   | Add (e1, e2) -> "(" ^ (string_of e1) ^ " + " ^ (string_of e2) ^ ")"
   | Mult (e1, e2) -> "(" ^ (string_of e1) ^ " * " ^ (string_of e2) ^ ")"
-  | Neg e ->
-    begin match e with
-    | Const _ -> "-" ^ (string_of e)
-    | Var _ -> "-" ^ (string_of e)
-    | _ -> "-(" ^ (string_of e) ^ ")"
-    end
+  | Neg e -> "-(" ^ (string_of e) ^ ")"
   end
 
 (*

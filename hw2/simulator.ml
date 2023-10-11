@@ -164,8 +164,35 @@ let map_addr (addr:quad) : int option = if addr >= mem_bot && addr < mem_top the
     - update the registers and/or memory appropriately
     - set the condition flags
 *)
+
+let option_to_int x : int =
+  match x with
+    |Some x -> x
+    |None ->raise X86lite_segfault
+
+let rec unifier ((x::xs):operand list) (m:mach) : operand list = 
+  match x with
+  |Imm (Lit x) -> Imm (Lit x) :: (unifier xs m)
+  |Ind1 (Lit x) -> Ind1 (Lit x) :: (unifier xs m)
+  |Ind2 x -> (Ind1 (Lit m.regs.(rind x))) :: (unifier xs m)
+  |Ind3 (Lit x, y) -> (Ind1 (Lit (Int64.add x m.regs.(rind y)))) :: (unifier xs m)
+  |Reg x -> Reg x :: (unifier xs m)
+  |_ -> []
+
+let sbyter (x:sbyte) : sbyte list = [x; InsFrag; InsFrag; InsFrag; InsFrag; InsFrag; InsFrag; InsFrag]
+let desbyter ((x::xs):sbyte list) : sbyte = x
+
 let step (m:mach) : unit =
-failwith "step unimplemented"
+  let InsB0 (operator, location) = m.mem.(option_to_int (map_addr m.regs.(rind Rip))) in
+  match operator,(unifier location m) with
+    | Movq, [Ind1 (Lit x); Reg y] -> let n = int64_of_sbytes (sbyter m.mem.(option_to_int (map_addr x))) in m.regs.(rind y) <- n
+    | Movq, [Imm (Lit x); Ind1 (Lit y)] -> let n = sbytes_of_int64 x in m.mem.(option_to_int (map_addr y)) <- desbyter n
+    | Movq, [Reg x; Ind1 (Lit y)] -> let n = sbytes_of_int64 (m.regs.(rind x)) in m.mem.(option_to_int (map_addr y)) <- desbyter n
+    | Movq, [Imm (Lit x); Reg y] -> m.regs.(rind y) <- x
+    | Movq, [Reg x; Reg y] -> let n = m.regs.(rind x) in m.regs.(rind y) <- n
+    | _ -> raise X86lite_segfault;
+  m.regs.(rind Rip) <- Int64.add 8L m.regs.(rind Rip)
+
 
 (* Runs the machine until the rip register reaches a designated
    memory address. Returns the contents of %rax when the 

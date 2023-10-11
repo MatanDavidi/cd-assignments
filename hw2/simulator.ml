@@ -170,28 +170,33 @@ let option_to_int x : int =
     |Some x -> x
     |None ->raise X86lite_segfault
 
-let rec unifier ((x::xs):operand list) (m:mach) : operand list = 
-  match x with
-  |Imm (Lit x) -> Imm (Lit x) :: (unifier xs m)
-  |Ind1 (Lit x) -> Ind1 (Lit x) :: (unifier xs m)
-  |Ind2 x -> (Ind1 (Lit m.regs.(rind x))) :: (unifier xs m)
-  |Ind3 (Lit x, y) -> (Ind1 (Lit (Int64.add x m.regs.(rind y)))) :: (unifier xs m)
-  |Reg x -> Reg x :: (unifier xs m)
-  |_ -> []
+let rec unifier (xs:operand list) (m:mach) : operand list = 
+  match xs with
+  | [] -> []
+  | x :: xss ->
+    match x with
+    | Imm (Lit n) -> Imm (Lit n) :: unifier xss m
+    | Ind1 (Lit n) -> Ind1 (Lit n) :: unifier xss m
+    | Ind2 r -> Ind1 (Lit m.regs.(rind r)) :: unifier xss m
+    | Ind3 (Lit x, y) -> Ind1 (Lit (Int64.add x m.regs.(rind y))) :: unifier xss m
+    | Reg r -> Reg r :: unifier xss m
 
 let sbyter (x:sbyte) : sbyte list = [x; InsFrag; InsFrag; InsFrag; InsFrag; InsFrag; InsFrag; InsFrag]
-let desbyter ((x::xs):sbyte list) : sbyte = x
+let desbyter (x: sbyte list) : sbyte =
+  match x with
+  | y :: _ -> y
+  | [] -> InsFrag
 
 let step (m:mach) : unit =
-  let InsB0 (operator, location) = m.mem.(option_to_int (map_addr m.regs.(rind Rip))) in
+  let InsB0 (operator, location) = m.mem.(option_to_int (map_addr m.regs.(rind Rip))) in m.regs.(rind Rip) <- Int64.add 8L m.regs.(rind Rip);
   match operator,(unifier location m) with
     | Movq, [Ind1 (Lit x); Reg y] -> let n = int64_of_sbytes (sbyter m.mem.(option_to_int (map_addr x))) in m.regs.(rind y) <- n
     | Movq, [Imm (Lit x); Ind1 (Lit y)] -> let n = sbytes_of_int64 x in m.mem.(option_to_int (map_addr y)) <- desbyter n
     | Movq, [Reg x; Ind1 (Lit y)] -> let n = sbytes_of_int64 (m.regs.(rind x)) in m.mem.(option_to_int (map_addr y)) <- desbyter n
     | Movq, [Imm (Lit x); Reg y] -> m.regs.(rind y) <- x
     | Movq, [Reg x; Reg y] -> let n = m.regs.(rind x) in m.regs.(rind y) <- n
-    | _ -> raise X86lite_segfault;
-  m.regs.(rind Rip) <- Int64.add 8L m.regs.(rind Rip)
+    | _ -> raise X86lite_segfault
+    
 
 
 (* Runs the machine until the rip register reaches a designated

@@ -181,23 +181,18 @@ let rec unifier (xs:operand list) (m:mach) : operand list =
     | Ind3 (Lit x, y) -> Ind1 (Lit (Int64.add x m.regs.(rind y))) :: unifier xss m
     | Reg r -> Reg r :: unifier xss m
 
-let sbyter (x:sbyte) : sbyte list = [x; InsFrag; InsFrag; InsFrag; InsFrag; InsFrag; InsFrag; InsFrag]
-let desbyter (x: sbyte list) : sbyte =
-  match x with
-  | y :: _ -> y
-  | [] -> InsFrag
+let frommem (m:mach) (x:int64) : sbyte list = let i = option_to_int (map_addr x) in let checking = map_addr (Int64.add x 7L) in [m.mem.(i); m.mem.(i+1); m.mem.(i+2); m.mem.(i+3); m.mem.(i+4); m.mem.(i+5); m.mem.(i+6); m.mem.(i+7)]
+let tomem (m:mach) (x:int64) (y:sbyte list) : unit = let i = option_to_int (map_addr x) in let checking = map_addr (Int64.add x 7L) in m.mem.(i) <- List.nth y 0; m.mem.(i+1) <- List.nth y 1; m.mem.(i+2) <- List.nth y 2; m.mem.(i+3) <- List.nth y 3; m.mem.(i+4) <- List.nth y 4; m.mem.(i+5) <- List.nth y 5; m.mem.(i+6) <- List.nth y 6; m.mem.(i+7) <- List.nth y 7
 
 let step (m:mach) : unit =
   let InsB0 (operator, location) = m.mem.(option_to_int (map_addr m.regs.(rind Rip))) in m.regs.(rind Rip) <- Int64.add 8L m.regs.(rind Rip);
   match operator,(unifier location m) with
-    | Movq, [Ind1 (Lit x); Reg y] -> let n = int64_of_sbytes (sbyter m.mem.(option_to_int (map_addr x))) in m.regs.(rind y) <- n
-    | Movq, [Imm (Lit x); Ind1 (Lit y)] -> let n = sbytes_of_int64 x in m.mem.(option_to_int (map_addr y)) <- desbyter n
-    | Movq, [Reg x; Ind1 (Lit y)] -> let n = sbytes_of_int64 (m.regs.(rind x)) in m.mem.(option_to_int (map_addr y)) <- desbyter n
+    | Movq, [Ind1 (Lit x); Reg y] -> let n = int64_of_sbytes (frommem m x) in m.regs.(rind y) <- n
+    | Movq, [Imm (Lit x); Ind1 (Lit y)] -> let n = sbytes_of_int64 x in tomem m y n
+    | Movq, [Reg x; Ind1 (Lit y)] -> let n = sbytes_of_int64 (m.regs.(rind x)) in tomem m y n
     | Movq, [Imm (Lit x); Reg y] -> m.regs.(rind y) <- x
     | Movq, [Reg x; Reg y] -> let n = m.regs.(rind x) in m.regs.(rind y) <- n
     | _ -> raise X86lite_segfault
-    
-
 
 (* Runs the machine until the rip register reaches a designated
    memory address. Returns the contents of %rax when the 

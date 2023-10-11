@@ -217,23 +217,59 @@ exception Undefined_sym of lbl
 (* Assemble should raise this when a label is defined more than once *)
 exception Redefined_sym of lbl
 
+let size_of_text_segment (p:prog) : quad =
+  List.fold_left (fun acc elem ->
+    match elem.asm with
+    | Text instructions -> Int64.add acc (Int64.mul ins_size (Int64.of_int (List.length instructions))) (* acc + 8 * (length instructions) *)
+    | Data _ -> acc  (* ignore data segments *)
+  ) 0L p
+
+(* Builds a symbol table (i.e. a table that associates each label 
+   with its absolute address) out of the given program.
+*)
+(* let build_symbol_tbl (p:prog) : (lbl * quad) list =
+  List.map (fun e:elem -> 
+    match e.asm with
+    | Text ins_list -> []
+    | Data data_list -> []
+  ) p *)
+
+let build_text_seg (p:prog) : sbyte list =
+  List.fold_left (fun (acc:sbyte list) (e:elem) : sbyte list ->
+    match e.asm with
+    | Text ins_list -> acc @ (List.concat (List.map sbytes_of_ins ins_list))
+    | Data _ -> [(Byte ' ')]
+  ) [] p 
+
+let build_data_seg (p:prog) : sbyte list =
+  List.fold_left (fun (acc:sbyte list) (e:elem) : sbyte list ->
+    match e.asm with
+    | Text _ -> [(Byte ' ')]
+    | Data data_list -> acc @ (List.concat (List.map sbytes_of_data data_list))
+  ) [] p 
+
 (* Convert an X86 program into an object file:
-   - separate the text and data segments
-   - compute the size of each segment
-      Note: the size of an Asciz string section is (1 + the string length)
-            due to the null terminator
+  - separate the text and data segments
+  - compute the size of each segment
+    Note: the size of an Asciz string section is (1 + the string length)
+          due to the null terminator
 
-   - resolve the labels to concrete addresses and 'patch' the instructions to 
-     replace Lbl values with the corresponding Imm values.
+  - resolve the labels to concrete addresses and 'patch' the instructions to 
+    replace Lbl values with the corresponding Imm values.
 
-   - the text segment starts at the lowest address
-   - the data segment starts after the text segment
+  - the text segment starts at the lowest address
+  - the data segment starts after the text segment
 
-  HINT: List.fold_left and List.fold_right are your friends.
- *)
+HINT: List.fold_left and List.fold_right are your friends.
+*)
 let assemble (p:prog) : exec =
-failwith "assemble unimplemented"
-
+  (* let sym_table = build_symbol_tbl p in *)
+  let entry = 0L in
+  let text_pos = mem_bot in
+  let data_pos = Int64.add text_pos (size_of_text_segment p) in
+  let text_seg = [] (*build_text_seg p*) in
+  let data_seg = [] in 
+  {entry; text_pos; data_pos; text_seg; data_seg}
 (* Convert an object file into an executable machine state. 
     - allocate the mem array
     - set up the memory state by writing the symbolic bytes to the 

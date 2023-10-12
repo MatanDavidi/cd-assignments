@@ -192,6 +192,9 @@ let step (m:mach) : unit =
     | Movq, [Reg x; Ind1 (Lit y)] -> let n = sbytes_of_int64 (m.regs.(rind x)) in tomem m y n
     | Movq, [Imm (Lit x); Reg y] -> m.regs.(rind y) <- x
     | Movq, [Reg x; Reg y] -> let n = m.regs.(rind x) in m.regs.(rind y) <- n
+    | Pushq, [Reg x] -> let n = m.regs.(rind Rsp) in m.regs.(rind Rsp) <- Int64.sub n 8L; tomem m m.regs.(rind Rsp) (sbytes_of_int64 m.regs.(rind x))
+    | Pushq, [Imm (Lit x)] -> let n = m.regs.(rind Rsp) in m.regs.(rind Rsp) <- Int64.sub n 8L; tomem m m.regs.(rind Rsp) (sbytes_of_int64 x)
+    | Pushq, [Ind1 (Lit x)] -> let n = m.regs.(rind Rsp) in m.regs.(rind Rsp) <- Int64.sub n 8L; tomem m m.regs.(rind Rsp) (frommem m x)
     | _ -> raise X86lite_segfault
 
 (* Runs the machine until the rip register reaches a designated

@@ -140,7 +140,7 @@ let sbytes_of_data : data -> sbyte list = function
      [if !debug_simulator then print_endline @@ string_of_ins u; ...]
 
 *)
-let debug_simulator = ref false
+let debug_simulator = ref true
 
 (* Interpret a condition code with respect to the given flags. *)
 let interp_cnd {fo; fs; fz} : cnd -> bool = fun x ->
@@ -261,6 +261,7 @@ exception Undefined_sym of lbl
 (* Assemble should raise this when a label is defined more than once *)
 exception Redefined_sym of lbl
 
+(* Computes the size of the text segment in a program *)
 let size_of_text_segment (p:prog) : quad =
   List.fold_left (fun acc elem ->
     match elem.asm with
@@ -268,30 +269,102 @@ let size_of_text_segment (p:prog) : quad =
     | Data _ -> acc  (* ignore data segments *)
   ) 0L p
 
+let operand_addr_helper (imm:imm) (base_addr:quad) : ((lbl * quad) list) * quad =
+  let new_base_addr = ref base_addr in
+  match imm with
+  | Lbl x -> 
+    new_base_addr := Int64.add base_addr ins_size;
+    [(x, base_addr)], !new_base_addr
+  | _ -> [], base_addr
+
+let lbl_assign_addr (op:operand) (base_addr:quad) : ((lbl * quad) list) * quad =
+  match op with
+  | Imm imm 
+  | Ind1 imm
+  | Ind3 (imm, _) -> 
+    let (re_sym, re_ba) = (operand_addr_helper imm base_addr) in (re_sym, re_ba)
+  | _ -> [], base_addr
+  
 (* Builds a symbol table (i.e. a table that associates each label 
    with its absolute address) out of the given program.
 *)
-(* let build_symbol_tbl (p:prog) : (lbl * quad) list =
-  List.map (fun e:elem -> 
-    match e.asm with
-    | Text ins_list -> []
-    | Data data_list -> []
-  ) p *)
+let build_symbol_tbl (p:prog) (base_addr_text:quad) (base_addr_data:quad) : (lbl * quad) list =
+  let symbol_tbl = ref [] in
+  let base_addr_text = ref base_addr_text in
+  let base_addr_data = ref base_addr_data in
+  List.iter (fun elem ->
+    match elem.asm with
+    | Text _ -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_text)]; 
+                              base_addr_text := Int64.add !base_addr_text ins_size
+    | Data _ -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_data)]; 
+                              base_addr_data := Int64.add !base_addr_data ins_size
+  ) p;
+  !symbol_tbl
 
 let build_text_seg (p:prog) : sbyte list =
   List.fold_left (fun (acc:sbyte list) (e:elem) : sbyte list ->
     match e.asm with
-    | Text ins_list -> acc @ (List.concat (List.map sbytes_of_ins ins_list))
-    | Data _ -> [(Byte ' ')]
+    | Text ins_list -> acc @ (List.concat (List.map (fun ins -> (if !debug_simulator then print_endline @@ (string_of_ins ins)); sbytes_of_ins ins) ins_list))
+    | Data _ -> acc
   ) [] p 
 
 let build_data_seg (p:prog) : sbyte list =
   List.fold_left (fun (acc:sbyte list) (e:elem) : sbyte list ->
     match e.asm with
-    | Text _ -> [(Byte ' ')]
+    | Text _ -> acc
     | Data data_list -> acc @ (List.concat (List.map sbytes_of_data data_list))
   ) [] p 
 
+(* Looks up label inside symble table and returns absolute address *)
+let rec sym_tbl_lookup (l:lbl) (sym_tbl:(lbl * quad) list) : quad = 
+  match sym_tbl with
+  | [] -> raise (Undefined_sym l)
+  | ((label, addr) :: tbl) -> 
+      if label = l then addr
+      else sym_tbl_lookup l tbl
+
+(* Iterates through program p and resolves all Lbls inside instructions to their absolute value based on the contents of sym_tbl, 
+   or raises an Undefined_sym exception if a label cannot be found in sym_tbl 
+*)
+let resolve_lbls (sym_tbl:(lbl * quad) list) (p:prog) : prog = 
+  List.map (
+    fun (e:elem) : elem -> 
+      begin
+        match e.asm with
+        | Text instrs -> 
+          let new_instrs = (List.map (
+            fun (((opcode:opcode), (operands:operand list)):ins) : ins -> 
+              (opcode, List.map (
+                fun (o:operand) : operand -> 
+                  begin
+                    match o with
+                    | Imm imm ->
+                      begin
+                        match imm with
+                        | Lbl lbl -> Imm (Lit (sym_tbl_lookup lbl sym_tbl))
+                        | Lit quad -> Imm (Lit quad)
+                      end
+                    | Ind1 imm -> 
+                      begin
+                        match imm with
+                        | Lbl lbl -> Ind1 (Lit (sym_tbl_lookup lbl sym_tbl))
+                        | Lit quad -> Ind1 (Lit quad)
+                      end
+                    | Ind3 (imm, reg) -> let new_imm = (
+                      fun (i:imm) ->
+                        match i with
+                        | Lbl lbl -> Lit (sym_tbl_lookup lbl sym_tbl)
+                        | Lit quad -> Lit quad
+                      ) imm in 
+                      Ind3 (new_imm, reg)
+                    | _ -> o
+                  end
+              ) operands)
+          ) instrs) in
+          { lbl = e.lbl; global = e.global; asm = Text new_instrs }
+        | Data x -> { lbl = e.lbl; global = e.global; asm = Data x }
+      end
+  ) p
 (* Convert an X86 program into an object file:
   - separate the text and data segments
   - compute the size of each segment
@@ -307,13 +380,15 @@ let build_data_seg (p:prog) : sbyte list =
 HINT: List.fold_left and List.fold_right are your friends.
 *)
 let assemble (p:prog) : exec =
-  (* let sym_table = build_symbol_tbl p in *)
   let entry = 0L in
   let text_pos = mem_bot in
   let data_pos = Int64.add text_pos (size_of_text_segment p) in
-  let text_seg = [] (*build_text_seg p*) in
-  let data_seg = [] in 
-  {entry; text_pos; data_pos; text_seg; data_seg}
+  let sym_table = build_symbol_tbl p text_pos data_pos in
+  let resolved_prog = resolve_lbls sym_table p in
+  let text_seg = build_text_seg resolved_prog in
+  let data_seg = build_data_seg resolved_prog in 
+  let main_checker = (sym_tbl_lookup "main" sym_table) in
+  {entry = entry; text_pos = text_pos; data_pos = data_pos; text_seg = text_seg; data_seg = data_seg}
 (* Convert an object file into an executable machine state. 
     - allocate the mem array
     - set up the memory state by writing the symbolic bytes to the 

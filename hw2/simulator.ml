@@ -185,6 +185,11 @@ let frommem (m:mach) (x:int64) : sbyte list = let i = option_to_int (map_addr x)
 let tomem (m:mach) (x:int64) (y:sbyte list) : unit = let i = option_to_int (map_addr x) in let checking = map_addr (Int64.add x 7L) in m.mem.(i) <- List.nth y 0; m.mem.(i+1) <- List.nth y 1; m.mem.(i+2) <- List.nth y 2; m.mem.(i+3) <- List.nth y 3; m.mem.(i+4) <- List.nth y 4; m.mem.(i+5) <- List.nth y 5; m.mem.(i+6) <- List.nth y 6; m.mem.(i+7) <- List.nth y 7
 
 let setter (m:mach) (x:bool list) : unit = let cur = m.flags in (cur.fo <- List.nth x 0; cur.fs <- List.nth x 1; cur.fz <- List.nth x 2)
+let special_setter (m:mach) (x:bool list) : unit = let cur = m.flags in (cur.fs <- List.nth x 0; cur.fz <- List.nth x 1)
+let equalbit (x:int64) : bool = let firstone = Int64.logand (Int64.shift_right x 63) 1L in let secondone = Int64.logand (Int64.shift_right x 62) 1L in firstone <> secondone
+let most_sign (x:int64) : bool = let firstone = Int64.logand (Int64.shift_right x 63) 1L in firstone = 1L
+let byte_setter (b:int64) (n : int64) : int64 = let clear = Int64.logand n (Int64.lognot 255L) in Int64.logor clear b
+
 
 let step (m:mach) : unit =
   let InsB0 (operator, location) = m.mem.(option_to_int (map_addr m.regs.(rind Rip))) in m.regs.(rind Rip) <- Int64.add 8L m.regs.(rind Rip);
@@ -236,6 +241,27 @@ let step (m:mach) : unit =
     | Xorq, [Reg x; Reg y] -> let n = m.regs.(rind y) in let z = m.regs.(rind x) in let result = Int64.logxor n z in (m.regs.(rind y) <- result; setter m [false; result < 0L; result = 0L])
     | Xorq, [Imm (Lit z); Reg y] -> let n = m.regs.(rind y) in let result = Int64.logxor n z in (m.regs.(rind y) <- result; setter m [false; result < 0L; result = 0L])
     | Xorq, [Imm (Lit z); Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let result = Int64.logxor n z in (tomem m y (sbytes_of_int64 result); setter m [false; result < 0L; result = 0L])
+    | Sarq, [Reg x; Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let z = m.regs.(rind x) in let result = Int64.shift_right n (Int64.to_int z) in (tomem m y (sbytes_of_int64 result); if z <> 0L then (if z = 1L then setter m [false; result < 0L; result = 0L] else special_setter m [result < 0L; result = 0L]))
+    | Sarq, [Reg x; Reg y] -> let n = m.regs.(rind y) in let z = m.regs.(rind x) in let result = Int64.shift_right n (Int64.to_int z) in (m.regs.(rind y) <- result; if z <> 0L then (if z = 1L then setter m [false; result < 0L; result = 0L] else special_setter m [result < 0L; result = 0L]))
+    | Sarq, [Imm (Lit z); Reg y] -> let n = m.regs.(rind y) in let result = Int64.shift_right n (Int64.to_int z) in (m.regs.(rind y) <- result; if z <> 0L then (if z = 1L then setter m [false; result < 0L; result = 0L] else special_setter m [result < 0L; result = 0L]))
+    | Sarq, [Imm (Lit z); Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let result = Int64.shift_right n (Int64.to_int z) in (tomem m y (sbytes_of_int64 result); if z <> 0L then (if z = 1L then setter m [false; result < 0L; result = 0L] else special_setter m [result < 0L; result = 0L]))
+    | Shlq, [Reg x; Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let z = m.regs.(rind x) in let result = Int64.shift_left n (Int64.to_int z) in (tomem m y (sbytes_of_int64 result); if z <> 0L then (if z = 1L then setter m [equalbit n; result < 0L; result = 0L] else special_setter m [result < 0L; result = 0L]))
+    | Shlq, [Reg x; Reg y] -> let n = m.regs.(rind y) in let z = m.regs.(rind x) in let result = Int64.shift_left n (Int64.to_int z) in (m.regs.(rind y) <- result; if z <> 0L then (if z = 1L then setter m [equalbit n; result < 0L; result = 0L] else special_setter m [result < 0L; result = 0L]))
+    | Shlq, [Imm (Lit z); Reg y] -> let n = m.regs.(rind y) in let result = Int64.shift_left n (Int64.to_int z) in (m.regs.(rind y) <- result; if z <> 0L then (if z = 1L then setter m [equalbit n; result < 0L; result = 0L] else special_setter m [result < 0L; result = 0L]))
+    | Shlq, [Imm (Lit z); Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let result = Int64.shift_left n (Int64.to_int z) in (tomem m y (sbytes_of_int64 result); if z <> 0L then (if z = 1L then setter m [equalbit n; result < 0L; result = 0L] else special_setter m [result < 0L; result = 0L]))
+    | Shrq, [Reg x; Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let z = m.regs.(rind x) in let result = Int64.shift_right_logical n (Int64.to_int z) in (tomem m y (sbytes_of_int64 result); if z <> 0L then (if z = 1L then setter m [most_sign n; most_sign result; result = 0L] else special_setter m [most_sign result; result = 0L]))
+    | Shrq, [Reg x; Reg y] -> let n = m.regs.(rind y) in let z = m.regs.(rind x) in let result = Int64.shift_right_logical n (Int64.to_int z) in (m.regs.(rind y) <- result; if z <> 0L then (if z = 1L then setter m [most_sign n; most_sign result; result = 0L] else special_setter m [most_sign result; result = 0L]))
+    | Shrq, [Imm (Lit z); Reg y] -> let n = m.regs.(rind y) in let result = Int64.shift_right_logical n (Int64.to_int z) in (m.regs.(rind y) <- result; if z <> 0L then (if z = 1L then setter m [most_sign n; most_sign result; result = 0L] else special_setter m [most_sign result; result = 0L]))
+    | Shrq, [Imm (Lit z); Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let result = Int64.shift_right_logical n (Int64.to_int z) in (tomem m y (sbytes_of_int64 result); if z <> 0L then (if z = 1L then setter m [most_sign n; most_sign result; result = 0L] else special_setter m [most_sign result; result = 0L]))
+    | Set x, [Reg y] -> let n = m.regs.(rind y) in if interp_cnd m.flags x then m.regs.(rind y) <- byte_setter 1L n else m.regs.(rind y) <- byte_setter 0L n
+    | Set x, [Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in if interp_cnd m.flags x then tomem m y (sbytes_of_int64 (byte_setter 1L n)) else tomem m y (sbytes_of_int64 (byte_setter 0L n))
+    | Cmpq, [Ind1 (Lit x); Reg y] -> let n = int64_of_sbytes (frommem m x) in let z = m.regs.(rind y) in let result = Int64_overflow.sub z n in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
+    | Cmpq, [Reg x; Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let z = m.regs.(rind x) in let result = Int64_overflow.sub n z in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
+    | Cmpq, [Reg x; Reg y] -> let n = m.regs.(rind y) in let z = m.regs.(rind x) in let result = Int64_overflow.sub n z in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
+    | Cmpq, [Imm (Lit z); Reg y] -> let n = m.regs.(rind y) in let result = Int64_overflow.sub n z in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
+    | Cmpq, [Imm (Lit z); Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let result = Int64_overflow.sub n z in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
+    | Cmpq, [Reg y; Imm (Lit z)] -> let n = m.regs.(rind y) in let result = Int64_overflow.sub z n in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
+    | Cmpq, [Ind1 (Lit y); Imm (Lit z)] -> let n = int64_of_sbytes (frommem m y) in let result = Int64_overflow.sub z n in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
     | _ -> raise X86lite_segfault
 
 (* Runs the machine until the rip register reaches a designated

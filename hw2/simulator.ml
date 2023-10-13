@@ -262,6 +262,16 @@ let step (m:mach) : unit =
     | Cmpq, [Imm (Lit z); Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let result = Int64_overflow.sub n z in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
     | Cmpq, [Reg y; Imm (Lit z)] -> let n = m.regs.(rind y) in let result = Int64_overflow.sub z n in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
     | Cmpq, [Ind1 (Lit y); Imm (Lit z)] -> let n = int64_of_sbytes (frommem m y) in let result = Int64_overflow.sub z n in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
+    | Jmp, [Ind1 (Lit x)] -> let n = int64_of_sbytes (frommem m x) in m.regs.(rind Rip) <- n
+    | Jmp, [Reg x] -> let n = m.regs.(rind x) in m.regs.(rind Rip) <- n
+    | Jmp, [Imm (Lit x)] -> m.regs.(rind Rip) <- x
+    | J y, [Ind1 (Lit x)] -> if interp_cnd m.flags y then let n = int64_of_sbytes (frommem m x) in m.regs.(rind Rip) <- n
+    | J y, [Reg x] -> if interp_cnd m.flags y then let n = m.regs.(rind x) in m.regs.(rind Rip) <- n
+    | J y, [Imm (Lit x)] -> if interp_cnd m.flags y then m.regs.(rind Rip) <- x
+    | Callq, [Ind1 (Lit x)] -> let n = m.regs.(rind Rsp) in m.regs.(rind Rsp) <- Int64.sub n 8L; tomem m m.regs.(rind Rsp) (sbytes_of_int64 m.regs.(rind Rip)); let n = int64_of_sbytes (frommem m x) in m.regs.(rind Rip) <- n
+    | Callq, [Reg x] -> let n = m.regs.(rind Rsp) in m.regs.(rind Rsp) <- Int64.sub n 8L; tomem m m.regs.(rind Rsp) (sbytes_of_int64 m.regs.(rind Rip)); let n = m.regs.(rind x) in m.regs.(rind Rip) <- n
+    | Callq, [Imm (Lit x)] -> let n = m.regs.(rind Rsp) in m.regs.(rind Rsp) <- Int64.sub n 8L; tomem m m.regs.(rind Rsp) (sbytes_of_int64 m.regs.(rind Rip)); m.regs.(rind Rip) <- x
+    | Retq, [] -> let n = int64_of_sbytes (frommem m m.regs.(rind Rsp)) in m.regs.(rind Rip) <- n; m.regs.(rind Rsp) <- Int64.add m.regs.(rind Rsp) 8L
     | _ -> raise X86lite_segfault
 
 (* Runs the machine until the rip register reaches a designated

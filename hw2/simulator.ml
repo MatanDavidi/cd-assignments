@@ -446,4 +446,16 @@ let assemble (p:prog) : exec =
   may be of use.
 *)
 let load {entry; text_pos; data_pos; text_seg; data_seg} : mach = 
-failwith "load unimplemented"
+  let flags = { fo = false; fs = false; fz = false } in
+  let last_word_addr = Int64.sub mem_top ins_size in
+  let regs = (Array.make nregs 0L) in
+  regs.(rind Rip) <- entry; (* Initialize the `rip` register to the entry point address *)
+  regs.(rind Rsp) <- last_word_addr; (* Initialize the `rip` register to the entry point address *)
+  let mem_len = (Int64.sub mem_top mem_bot) in
+  let mem = Array.make (Int64.to_int mem_len) InsFrag in
+  let text_seg_arr = Array.of_list text_seg in
+  let data_seg_arr = Array.of_list data_seg in
+  Array.blit text_seg_arr 0 mem (Int64.to_int (Int64.sub text_pos mem_bot)) (List.length text_seg);
+  Array.blit data_seg_arr 0 mem (Int64.to_int (Int64.sub data_pos mem_bot)) (List.length data_seg);
+  Array.blit (Array.of_list (sbytes_of_int64 exit_addr)) 0 mem (Int64.to_int (Int64.sub mem_len ins_size)) (Int64.to_int ins_size);
+  {flags = flags; regs = regs; mem = mem}

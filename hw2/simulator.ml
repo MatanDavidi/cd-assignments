@@ -305,6 +305,13 @@ let size_of_text_segment (p:prog) : quad =
     | Data _ -> acc  (* ignore data segments *)
   ) 0L p
 
+let size_of_data_segment (p:prog) : quad =
+  List.fold_left (fun acc elem ->
+    match elem.asm with
+    | Text _ -> acc  (* ignore text segments *)
+    | Data data_list -> Int64.add acc (Int64.mul ins_size (Int64.of_int (List.length data_list))) (* acc + 8 * (length instructions) *)
+  ) 0L p
+
 let operand_addr_helper (imm:imm) (base_addr:quad) : ((lbl * quad) list) * quad =
   let new_base_addr = ref base_addr in
   match imm with
@@ -416,9 +423,9 @@ let resolve_lbls (sym_tbl:(lbl * quad) list) (p:prog) : prog =
 HINT: List.fold_left and List.fold_right are your friends.
 *)
 let assemble (p:prog) : exec =
-  let entry = 0L in
   let text_pos = mem_bot in
   let data_pos = Int64.add text_pos (size_of_text_segment p) in
+  let entry = Int64.add data_pos (size_of_data_segment p) in
   let sym_table = build_symbol_tbl p text_pos data_pos in
   let resolved_prog = resolve_lbls sym_table p in
   let text_seg = build_text_seg resolved_prog in

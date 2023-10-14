@@ -140,7 +140,7 @@ let sbytes_of_data : data -> sbyte list = function
      [if !debug_simulator then print_endline @@ string_of_ins u; ...]
 
 *)
-let debug_simulator = ref true
+let debug_simulator = ref false
 
 (* Interpret a condition code with respect to the given flags. *)
 let interp_cnd {fo; fs; fz} : cnd -> bool = fun x ->
@@ -192,7 +192,7 @@ let byte_setter (b:int64) (n : int64) : int64 = let clear = Int64.logand n (Int6
 
 
 let step (m:mach) : unit =
-  let InsB0 (operator, location) = m.mem.(option_to_int (map_addr m.regs.(rind Rip))) in print_endline @@ (string_of_ins (operator, location)); m.regs.(rind Rip) <- Int64.add 8L m.regs.(rind Rip);
+  let InsB0 (operator, location) = m.mem.(option_to_int (map_addr m.regs.(rind Rip))) in m.regs.(rind Rip) <- Int64.add 8L m.regs.(rind Rip);
   match operator,(unifier location m) with
     | Movq, [Ind1 (Lit x); Reg y] -> let n = int64_of_sbytes (frommem m x) in m.regs.(rind y) <- n
     | Movq, [Imm (Lit x); Ind1 (Lit y)] -> let n = sbytes_of_int64 x in tomem m y n
@@ -278,7 +278,7 @@ let step (m:mach) : unit =
    memory address. Returns the contents of %rax when the 
    machine halts. *)
 let run (m:mach) : int64 = 
-  while m.regs.(rind Rip) <> exit_addr do (if !debug_simulator && (m.regs.(rind Rip) <> 4194312L) && ((m.regs.(rind Rip) <> 4194320L)) then print_endline @@ Int64.to_string m.regs.(rind Rip)); step m done;
+  while m.regs.(rind Rip) <> exit_addr do (if !debug_simulator then print_endline @@ Int64.to_string m.regs.(rind Rip)); step m done;
   m.regs.(rind Rax)
 
 (* assembling and linking --------------------------------------------------- *)

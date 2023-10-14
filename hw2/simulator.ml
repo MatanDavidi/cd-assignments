@@ -262,6 +262,7 @@ let step (m:mach) : unit =
     | Cmpq, [Imm (Lit z); Ind1 (Lit y)] -> let n = int64_of_sbytes (frommem m y) in let result = Int64_overflow.sub n z in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
     | Cmpq, [Reg y; Imm (Lit z)] -> let n = m.regs.(rind y) in let result = Int64_overflow.sub z n in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
     | Cmpq, [Ind1 (Lit y); Imm (Lit z)] -> let n = int64_of_sbytes (frommem m y) in let result = Int64_overflow.sub z n in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
+    | Cmpq, [Imm (Lit y); Imm (Lit z)] -> let result = Int64_overflow.sub z y in setter m [result.Int64_overflow.overflow; result.Int64_overflow.value < 0L; result.Int64_overflow.value = 0L]
     | Jmp, [Ind1 (Lit x)] -> let n = int64_of_sbytes (frommem m x) in m.regs.(rind Rip) <- n
     | Jmp, [Reg x] -> let n = m.regs.(rind x) in m.regs.(rind Rip) <- n
     | Jmp, [Imm (Lit x)] -> m.regs.(rind Rip) <- x
@@ -272,7 +273,7 @@ let step (m:mach) : unit =
     | Callq, [Reg x] -> let n = m.regs.(rind Rsp) in m.regs.(rind Rsp) <- Int64.sub n 8L; tomem m m.regs.(rind Rsp) (sbytes_of_int64 m.regs.(rind Rip)); let n = m.regs.(rind x) in m.regs.(rind Rip) <- n
     | Callq, [Imm (Lit x)] -> let n = m.regs.(rind Rsp) in m.regs.(rind Rsp) <- Int64.sub n 8L; tomem m m.regs.(rind Rsp) (sbytes_of_int64 m.regs.(rind Rip)); m.regs.(rind Rip) <- x
     | Retq, [] -> let n = int64_of_sbytes (frommem m m.regs.(rind Rsp)) in m.regs.(rind Rip) <- n; m.regs.(rind Rsp) <- Int64.add m.regs.(rind Rsp) 8L
-    | _ -> raise X86lite_segfault
+    | _ -> let exception Foo of string in raise (Foo "Oh no!")
 
 (* Runs the machine until the rip register reaches a designated
    memory address. Returns the contents of %rax when the 
@@ -331,15 +332,16 @@ let lbl_assign_addr (op:operand) (base_addr:quad) : ((lbl * quad) list) * quad =
 (* Builds a symbol table (i.e. a table that associates each label 
    with its absolute address) out of the given program.
 *)
-let build_symbol_tbl (p:prog) (base_addr:quad) : (lbl * quad) list =
+let build_symbol_tbl (p:prog) (base_addr_text:quad) (base_addr_data:quad) : (lbl * quad) list =
   let symbol_tbl = ref [] in
-  let base_addr = ref base_addr in
+  let base_addr_text = ref base_addr_text in
+  let base_addr_data = ref base_addr_data in
   List.iter (fun elem ->
     match elem.asm with
-    | Text l -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr)];
-      base_addr := Int64.add !base_addr (Int64.mul (Int64.of_int (List.length l)) ins_size)
-    | Data l -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr)];
-    base_addr := Int64.add !base_addr (Int64.mul (Int64.of_int (List.length l)) ins_size)
+    | Text l -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_text)];
+      base_addr_text := Int64.add !base_addr_text (Int64.mul (Int64.of_int (List.length l)) ins_size)
+    | Data l -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_data)];
+    base_addr_data := Int64.add !base_addr_data (Int64.mul (Int64.of_int (List.length l)) ins_size)
   ) p;
   !symbol_tbl
 
@@ -424,7 +426,7 @@ HINT: List.fold_left and List.fold_right are your friends.
 let assemble (p:prog) : exec =
   let text_pos = mem_bot in
   let data_pos = Int64.add text_pos (size_of_text_segment p) in
-  let sym_table = build_symbol_tbl p text_pos in
+  let sym_table = build_symbol_tbl p text_pos data_pos in
   let resolved_prog = resolve_lbls sym_table p in
   let text_seg = build_text_seg resolved_prog in
   let data_seg = build_data_seg resolved_prog in 

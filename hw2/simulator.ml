@@ -273,7 +273,7 @@ let step (m:mach) : unit =
     | Callq, [Reg x] -> let n = m.regs.(rind Rsp) in m.regs.(rind Rsp) <- Int64.sub n 8L; tomem m m.regs.(rind Rsp) (sbytes_of_int64 m.regs.(rind Rip)); let n = m.regs.(rind x) in m.regs.(rind Rip) <- n
     | Callq, [Imm (Lit x)] -> let n = m.regs.(rind Rsp) in m.regs.(rind Rsp) <- Int64.sub n 8L; tomem m m.regs.(rind Rsp) (sbytes_of_int64 m.regs.(rind Rip)); m.regs.(rind Rip) <- x
     | Retq, [] -> let n = int64_of_sbytes (frommem m m.regs.(rind Rsp)) in m.regs.(rind Rip) <- n; m.regs.(rind Rsp) <- Int64.add m.regs.(rind Rsp) 8L
-    | _ -> let exception Foo of string in raise (Foo "Oh no!")
+    | _ -> failwith "Should not step (Wrong register / memory accesses)"
 
 (* Runs the machine until the rip register reaches a designated
    memory address. Returns the contents of %rax when the 
@@ -329,6 +329,13 @@ let lbl_assign_addr (op:operand) (base_addr:quad) : ((lbl * quad) list) * quad =
     let (re_sym, re_ba) = (operand_addr_helper imm base_addr) in (re_sym, re_ba)
   | _ -> [], base_addr
   
+let size_of_data_list (l:data list) : int =
+  List.fold_left (+) 0 (List.map (fun (d:data) : int -> 
+    match d with
+    | Asciz s -> (String.length s) + 1
+    | Quad _ -> 8
+  ) l)
+
 (* Builds a symbol table (i.e. a table that associates each label 
    with its absolute address) out of the given program.
 *)
@@ -341,7 +348,7 @@ let build_symbol_tbl (p:prog) (base_addr_text:quad) (base_addr_data:quad) : (lbl
     | Text l -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_text)];
       base_addr_text := Int64.add !base_addr_text (Int64.mul (Int64.of_int (List.length l)) ins_size)
     | Data l -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_data)];
-    base_addr_data := Int64.add !base_addr_data (Int64.mul (Int64.of_int (List.length l)) ins_size)
+    base_addr_data := Int64.add !base_addr_data (Int64.of_int (size_of_data_list l))
   ) p;
   !symbol_tbl
 

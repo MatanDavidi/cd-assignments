@@ -192,7 +192,7 @@ let byte_setter (b:int64) (n : int64) : int64 = let clear = Int64.logand n (Int6
 
 
 let step (m:mach) : unit =
-  let InsB0 (operator, location) = m.mem.(option_to_int (map_addr m.regs.(rind Rip))) in m.regs.(rind Rip) <- Int64.add 8L m.regs.(rind Rip);
+  let InsB0 (operator, location) = m.mem.(option_to_int (map_addr m.regs.(rind Rip))) in print_endline @@ (string_of_ins (operator, location)); m.regs.(rind Rip) <- Int64.add 8L m.regs.(rind Rip);
   match operator,(unifier location m) with
     | Movq, [Ind1 (Lit x); Reg y] -> let n = int64_of_sbytes (frommem m x) in m.regs.(rind y) <- n
     | Movq, [Imm (Lit x); Ind1 (Lit y)] -> let n = sbytes_of_int64 x in tomem m y n
@@ -278,7 +278,7 @@ let step (m:mach) : unit =
    memory address. Returns the contents of %rax when the 
    machine halts. *)
 let run (m:mach) : int64 = 
-  while m.regs.(rind Rip) <> exit_addr do step m done;
+  while m.regs.(rind Rip) <> exit_addr do (if !debug_simulator && (m.regs.(rind Rip) <> 4194312L) && ((m.regs.(rind Rip) <> 4194320L)) then print_endline @@ Int64.to_string m.regs.(rind Rip)); step m done;
   m.regs.(rind Rax)
 
 (* assembling and linking --------------------------------------------------- *)
@@ -331,16 +331,15 @@ let lbl_assign_addr (op:operand) (base_addr:quad) : ((lbl * quad) list) * quad =
 (* Builds a symbol table (i.e. a table that associates each label 
    with its absolute address) out of the given program.
 *)
-let build_symbol_tbl (p:prog) (base_addr_text:quad) (base_addr_data:quad) : (lbl * quad) list =
+let build_symbol_tbl (p:prog) (base_addr:quad) : (lbl * quad) list =
   let symbol_tbl = ref [] in
-  let base_addr_text = ref base_addr_text in
-  let base_addr_data = ref base_addr_data in
+  let base_addr = ref base_addr in
   List.iter (fun elem ->
     match elem.asm with
-    | Text _ -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_text)]; 
-                              base_addr_text := Int64.add !base_addr_text ins_size
-    | Data _ -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_data)]; 
-                              base_addr_data := Int64.add !base_addr_data ins_size
+    | Text l -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr)];
+      base_addr := Int64.add !base_addr (Int64.mul (Int64.of_int (List.length l)) ins_size)
+    | Data l -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr)];
+    base_addr := Int64.add !base_addr (Int64.mul (Int64.of_int (List.length l)) ins_size)
   ) p;
   !symbol_tbl
 
@@ -425,12 +424,11 @@ HINT: List.fold_left and List.fold_right are your friends.
 let assemble (p:prog) : exec =
   let text_pos = mem_bot in
   let data_pos = Int64.add text_pos (size_of_text_segment p) in
-  let entry = Int64.add data_pos (size_of_data_segment p) in
-  let sym_table = build_symbol_tbl p text_pos data_pos in
+  let sym_table = build_symbol_tbl p text_pos in
   let resolved_prog = resolve_lbls sym_table p in
   let text_seg = build_text_seg resolved_prog in
   let data_seg = build_data_seg resolved_prog in 
-  let main_checker = (sym_tbl_lookup "main" sym_table) in
+  let entry = (sym_tbl_lookup "main" sym_table) in
   {entry = entry; text_pos = text_pos; data_pos = data_pos; text_seg = text_seg; data_seg = data_seg}
 (* Convert an object file into an executable machine state. 
     - allocate the mem array
@@ -451,11 +449,10 @@ let load {entry; text_pos; data_pos; text_seg; data_seg} : mach =
   let regs = (Array.make nregs 0L) in
   regs.(rind Rip) <- entry; (* Initialize the `rip` register to the entry point address *)
   regs.(rind Rsp) <- last_word_addr; (* Initialize the `rip` register to the entry point address *)
-  let mem_len = (Int64.sub mem_top mem_bot) in
-  let mem = Array.make (Int64.to_int mem_len) InsFrag in
+  let mem = Array.make mem_size InsFrag in
   let text_seg_arr = Array.of_list text_seg in
   let data_seg_arr = Array.of_list data_seg in
   Array.blit text_seg_arr 0 mem (Int64.to_int (Int64.sub text_pos mem_bot)) (List.length text_seg);
   Array.blit data_seg_arr 0 mem (Int64.to_int (Int64.sub data_pos mem_bot)) (List.length data_seg);
-  Array.blit (Array.of_list (sbytes_of_int64 exit_addr)) 0 mem (Int64.to_int (Int64.sub mem_len ins_size)) (Int64.to_int ins_size);
+  Array.blit (Array.of_list (sbytes_of_int64 exit_addr)) 0 mem (Int64.to_int (Int64.sub (Int64.of_int mem_size) ins_size)) (Int64.to_int ins_size);
   {flags = flags; regs = regs; mem = mem}

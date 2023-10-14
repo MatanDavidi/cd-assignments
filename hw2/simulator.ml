@@ -336,6 +336,13 @@ let size_of_data_list (l:data list) : int =
     | Quad _ -> 8
   ) l)
 
+let rec sym_tbl_contains (l:lbl) (sym_tbl:(lbl * quad) list) : bool = 
+  match sym_tbl with
+  | [] -> false
+  | ((label, _) :: tbl) -> 
+      if label = l then true
+      else sym_tbl_contains l tbl
+
 (* Builds a symbol table (i.e. a table that associates each label 
    with its absolute address) out of the given program.
 *)
@@ -345,9 +352,9 @@ let build_symbol_tbl (p:prog) (base_addr_text:quad) (base_addr_data:quad) : (lbl
   let base_addr_data = ref base_addr_data in
   List.iter (fun elem ->
     match elem.asm with
-    | Text l -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_text)];
+    | Text l -> (if not (sym_tbl_contains elem.lbl !symbol_tbl) then symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_text)] else raise (Redefined_sym elem.lbl));
       base_addr_text := Int64.add !base_addr_text (Int64.mul (Int64.of_int (List.length l)) ins_size)
-    | Data l -> symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_data)];
+    | Data l -> (if not (sym_tbl_contains elem.lbl !symbol_tbl) then symbol_tbl := !symbol_tbl @ [(elem.lbl, !base_addr_data)] else raise (Redefined_sym elem.lbl));
     base_addr_data := Int64.add !base_addr_data (Int64.of_int (size_of_data_list l))
   ) p;
   !symbol_tbl

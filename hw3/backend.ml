@@ -251,7 +251,14 @@ let compile_lbl_block fn lbl ctxt blk : elem =
    [ NOTE: the first six arguments are numbered 0 .. 5 ]
 *)
 let arg_loc (n : int) : operand =
-failwith "arg_loc not implemented"
+match n with
+| 0 -> Reg Rdi
+| 1 -> Reg Rsi
+| 2 -> Reg Rdx
+| 3 -> Reg Rcx
+| 4 -> Reg R08
+| 5 -> Reg R09
+| _ -> Ind3 ( Lit ( Int64.mul 8L (Int64.sub (Int64.of_int n) 5L ) ) , Rbp )
 
 
 (* We suggest that you create a helper function that computes the
@@ -263,8 +270,14 @@ failwith "arg_loc not implemented"
    - see the discussion about locals
 
 *)
-let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout =
-failwith "stack_layout not implemented"
+let rec reg_layout ((args::xs) : uid list) (i:int) : layout =
+match xs with
+| [] -> [(args, arg_loc i)]
+| _ -> (args, arg_loc i) :: (reg_layout xs (i + 1))
+
+
+let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout = reg_layout args 0
+(* FINISH IMPLEMENTATION WITH FUNCTION BODY *)
 
 (* The code for the entry-point of a function must do several things:
 
@@ -283,7 +296,17 @@ failwith "stack_layout not implemented"
      to hold all of the local stack slots.
 *)
 let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg }:fdecl) : prog =
-failwith "compile_fdecl unimplemented"
+  [
+    { lbl = name; global = true; asm = 
+    let params_layout = (stack_layout f_param f_cfg) in
+      ( Text [
+        (Pushq, [Reg Rbp]);
+        (Movq, [Reg Rsp; Reg Rbp]);
+        (* IL TUO CODICE DIMMERDA *)
+        (Popq, [Reg Rbp]);
+        (Retq, [])
+    ] ) }
+  ]
 
 
 

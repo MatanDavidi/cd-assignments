@@ -230,7 +230,7 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
   |Cbr ((Id x), y, z) | Cbr ((Gid x), y, z) -> [(Cmpq, [Imm(Lit 1L); lookup ctxt.layout x]);(J Eq,[lookup ctxt.layout y]); (Jmp, [lookup ctxt.layout y])]
 
 
-(* compiling blocks -------------------- u------------------------------------- *)
+(* compiling blocks --------------------------------------------------------- *)
 
 (* We have left this helper function here for you to complete. 
    [fn] - the name of the function containing this block
@@ -280,7 +280,7 @@ match xs with
 | [] -> [(args, arg_loc i)]
 | _ -> (args, arg_loc i) :: (reg_layout xs (i + 1))
 
-let rec block_layout ({ insns; _ }:block) (offset:quad) : layout =
+let rec block_layout (insns : (uid * insn) list) (offset:quad) : layout =
   let offset = ref offset in
   List.concat (List.map (fun (ins: (uid * insn)) : layout -> 
     match ins with
@@ -293,24 +293,31 @@ let rec block_layout ({ insns; _ }:block) (offset:quad) : layout =
         | Alloca _ -> let old_offset = 
           !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
-        | Load _ -> let old_offset = !offset in offset := Int64.sub !offset 8L;
+        | Load _ -> let old_offset = 
+          !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
         | Store _ -> []
-        | Icmp _ -> let old_offset = !offset in offset := Int64.sub !offset 8L;
+        | Icmp _ -> let old_offset = 
+          !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
         | Call (Void, _, _) -> []
-        | Call _ -> let old_offset = !offset in offset := Int64.sub !offset 8L;
+        | Call _ -> let old_offset = 
+          !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
-        | Bitcast _ -> let old_offset = !offset in offset := Int64.sub !offset 8L;
+        | Bitcast _ -> let old_offset = 
+          !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
-        | Gep _ -> let old_offset = !offset in offset := Int64.sub !offset 8L;
+        | Gep _ -> let old_offset = 
+          !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
       in
       pair
      ) insns)
 
+let rec unifier (((x, {insns; term})::xs) : (lbl * block) list) : (uid * insn) list = if (x, {insns; term})::xs = [] then [] else insns @ (unifier xs)
+
 let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout = 
-  reg_layout args 0 @ (block_layout block (Int64.neg 8L))
+  reg_layout args 0 @ (block_layout (block.insns @ unifier lbled_blocks) (Int64.neg 8L))
 (* FINISH IMPLEMENTATION WITH FUNCTION BODY *)
 
 (* The code for the entry-point of a function must do several things:

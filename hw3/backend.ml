@@ -140,7 +140,12 @@ let compile_operand (ctxt:ctxt) (dest:X86.operand) : Ll.operand -> ins =
      Your function should simply return 0 in those cases
 *)
 let rec size_ty (tdecls:(tid * ty) list) (t:Ll.ty) : int =
-failwith "size_ty not implemented"
+match t with
+| Void | I8 | Fun (_, _) -> 0
+| I1 | I64 | Ptr _ -> 8
+| Struct l -> List.fold_left (+) 0 (List.map (size_ty tdecls) l)
+| Array (n, t') -> n * (size_ty tdecls t')
+| Namedt lbl -> size_ty tdecls (lookup tdecls lbl)
 
 
 
@@ -321,7 +326,6 @@ let rec unifier (l : (lbl * block) list) : (uid * insn) list =
 
 let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout = 
   reg_layout args 0 @ (block_layout (block.insns @ unifier lbled_blocks) (Int64.neg 8L))
-(* FINISH IMPLEMENTATION WITH FUNCTION BODY *)
 
 (* The code for the entry-point of a function must do several things:
 
@@ -346,10 +350,13 @@ let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg
   [
     { lbl = name; global = true; asm = 
     let params_layout = (stack_layout f_param f_cfg) in
+    let params_length = (Int64.mul 8L (Int64.of_int (List.length tdecls))) in
       ( Text [
         (Pushq, [Reg Rbp]);
         (Movq, [Reg Rsp; Reg Rbp]);
+        (Subq, [Imm (Lit params_length); Reg Rsp]);
         (* IL TUO CODICE DIMMERDA *)
+        (Addq, [Imm (Lit params_length); Reg Rsp]);
         (Popq, [Reg Rbp]);
         (Retq, [])
     ] ) }

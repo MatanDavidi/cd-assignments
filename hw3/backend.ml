@@ -90,7 +90,16 @@ let lookup m x = List.assoc x m
    destination (usually a register).
 *)
 let compile_operand (ctxt:ctxt) (dest:X86.operand) : Ll.operand -> ins =
-  function _ -> failwith "compile_operand unimplemented"
+  fun (op: Ll.operand) -> 
+    let (oprd: X86.operand) =
+      match ctxt with
+      | { tdecls : (lbl * ty) list; layout : layout; } -> 
+        match op with
+        | Null -> Imm (Lit 0L)
+        | Const x -> Imm (Lit x)
+        | Gid lbl | Id lbl -> lookup layout lbl
+    in
+    (Movq, [oprd; dest])
 
 
 
@@ -182,6 +191,15 @@ failwith "compile_gep not implemented"
 
 (* compiling instructions  -------------------------------------------------- *)
 
+let resolve_op (op:Ll.operand) (layout:layout) =
+  match op with
+  | Null -> Imm (Lit 0L)
+  | Const n -> Imm (Lit n)
+  | Gid id | Id id -> lookup layout id
+
+let compile_binop (op1:X86.operand) (op2:X86.operand) (dest:X86.operand) (opcode:opcode) =
+  [(Movq, [op2; dest]); (opcode, [op1; dest])]
+
 (* The result of compiling a single LLVM instruction might be many x86
    instructions.  We have not determined the structure of this code
    for you. Some of the instructions require only a couple of assembly
@@ -204,7 +222,49 @@ failwith "compile_gep not implemented"
    - Bitcast: does nothing interesting at the assembly level
 *)
 let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
-      failwith "compile_insn not implemented"
+      match ctxt with
+      | { tdecls : (lbl * ty) list; layout : layout; } -> 
+        let dest = lookup layout uid in
+        begin match i with
+        | Binop (bop, ty, op1, op2) -> 
+          let x86op1 = resolve_op op1 layout in
+          let x86op2 = resolve_op op2 layout in
+          begin match bop with
+          | Add -> compile_binop x86op1 x86op2 dest Addq
+          | Sub -> compile_binop x86op1 x86op2 dest Subq
+          | Mul -> compile_binop x86op1 x86op2 dest Imulq
+          | Shl -> compile_binop x86op1 x86op2 dest Shlq
+          | Lshr -> compile_binop x86op1 x86op2 dest Shrq
+          | Ashr -> compile_binop x86op1 x86op2 dest Sarq
+          | And -> compile_binop x86op1 x86op2 dest Andq
+          | Or -> compile_binop x86op1 x86op2 dest Orq
+          | Xor -> compile_binop x86op1 x86op2 dest Xorq
+          end
+        | Alloca ty -> []
+        | Load (_, op) -> 
+          begin match op with
+          | Null -> []
+          | Const n -> []
+          | Gid id | Id id -> [Movq, [(lookup layout id); dest]]
+          end
+        | Store (_, op1, op2) ->
+          begin match op1 with
+          | Null -> []
+          | _ -> 
+            let x86op1 = resolve_op op1 layout in
+            begin match op2 with
+            | Null | Const _ -> []
+            | _ -> 
+              let x86op2 = resolve_op op2 layout in
+              [Movq, [x86op1; x86op2]]
+            end
+          end
+        | Icmp (cond, ty, op1, op2) -> []
+        | Call (ty, op, operands) -> []
+        | Bitcast (ty1, op, ty2) -> []
+        | Gep (ty, op, operands) -> []
+        | _ -> []
+        end
 
 
 
@@ -243,7 +303,10 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
    [blk]  - LLVM IR code for the block
 *)
 let compile_block (fn:string) (ctxt:ctxt) (blk:Ll.block) : ins list =
-  failwith "compile_block not implemented"
+  match blk with
+  | { insns : (lbl * insn) list; term : lbl * terminator; } -> 
+    match term with
+    | (lbl, terminator) -> List.concat_map (compile_insn ctxt) insns @ (compile_terminator lbl ctxt terminator)
 
 let compile_lbl_block fn lbl ctxt blk : elem =
   Asm.text (mk_lbl fn lbl) (compile_block fn ctxt blk)
@@ -285,7 +348,7 @@ match xs with
 | [] -> [(args, arg_loc i)]
 | _ -> (args, arg_loc i) :: (reg_layout xs (i + 1))
 
-let rec block_layout (insns : (uid * insn) list) (offset:quad) : layout =
+let block_layout (insns : (uid * insn) list) (offset:quad) : layout =
   let offset = ref offset in
   List.concat (List.map (fun (ins: (uid * insn)) : layout -> 
     match ins with
@@ -351,15 +414,18 @@ let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg
     { lbl = name; global = true; asm = 
     let params_layout = (stack_layout f_param f_cfg) in
     let params_length = (Int64.mul 8L (Int64.of_int (List.length tdecls))) in
-      ( Text [
+    match f_cfg with
+    | (entry, blocks) ->
+      let ctxt = { tdecls = tdecls; layout = params_layout } in
+      let first_list = [
         (Pushq, [Reg Rbp]);
         (Movq, [Reg Rsp; Reg Rbp]);
-        (Subq, [Imm (Lit params_length); Reg Rsp]);
-        (* IL TUO CODICE DIMMERDA *)
-        (Addq, [Imm (Lit params_length); Reg Rsp]);
-        (Popq, [Reg Rbp]);
-        (Retq, [])
-    ] ) }
+        (Subq, [Imm (Lit params_length); Reg Rsp])] in
+      let snd_list = [(Addq, [Imm (Lit params_length); Reg Rsp]);
+      (Popq, [Reg Rbp]);
+      (Retq, [])] in
+      ( Text (List.concat [first_list; (compile_block name ctxt entry); (List.concat_map (fun (lbl, block) -> compile_block lbl ctxt block) blocks); snd_list]) )
+    }
   ]
 
 

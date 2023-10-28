@@ -280,8 +280,37 @@ match xs with
 | [] -> [(args, arg_loc i)]
 | _ -> (args, arg_loc i) :: (reg_layout xs (i + 1))
 
+let rec block_layout ({ insns; _ }:block) (offset:quad) : layout =
+  let offset = ref offset in
+  List.concat (List.map (fun (ins: (uid * insn)) : layout -> 
+    match ins with
+    | (uid, instr) -> 
+      let pair = 
+        match instr with
+        | Binop _ -> let old_offset = 
+          !offset in offset := Int64.sub !offset 8L; 
+          [(uid, Ind3 (Lit old_offset, Rbp))]
+        | Alloca _ -> let old_offset = 
+          !offset in offset := Int64.sub !offset 8L;
+          [(uid, Ind3 (Lit old_offset, Rbp))]
+        | Load _ -> let old_offset = !offset in offset := Int64.sub !offset 8L;
+          [(uid, Ind3 (Lit old_offset, Rbp))]
+        | Store _ -> []
+        | Icmp _ -> let old_offset = !offset in offset := Int64.sub !offset 8L;
+          [(uid, Ind3 (Lit old_offset, Rbp))]
+        | Call (Void, _, _) -> []
+        | Call _ -> let old_offset = !offset in offset := Int64.sub !offset 8L;
+          [(uid, Ind3 (Lit old_offset, Rbp))]
+        | Bitcast _ -> let old_offset = !offset in offset := Int64.sub !offset 8L;
+          [(uid, Ind3 (Lit old_offset, Rbp))]
+        | Gep _ -> let old_offset = !offset in offset := Int64.sub !offset 8L;
+          [(uid, Ind3 (Lit old_offset, Rbp))]
+      in
+      pair
+     ) insns)
 
-let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout = reg_layout args 0
+let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout = 
+  reg_layout args 0 @ (block_layout block (Int64.neg 8L))
 (* FINISH IMPLEMENTATION WITH FUNCTION BODY *)
 
 (* The code for the entry-point of a function must do several things:
@@ -300,6 +329,9 @@ let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout = reg_la
    - the function entry code should allocate the stack storage needed
      to hold all of the local stack slots.
 *)
+(* `f_ty` is a function type that consists of a list of argument types and a return type. *)
+(* `f_param` is a list of unique identifiers for the function parameters *)
+(* `f_cfg` is a control flow graph that represents the body of the function *)
 let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg }:fdecl) : prog =
   [
     { lbl = name; global = true; asm = 

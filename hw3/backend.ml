@@ -314,7 +314,10 @@ let rec block_layout (insns : (uid * insn) list) (offset:quad) : layout =
       pair
      ) insns)
 
-let rec unifier (((x, {insns; term})::xs) : (lbl * block) list) : (uid * insn) list = if (x, {insns; term})::xs = [] then [] else insns @ (unifier xs)
+let rec unifier (l : (lbl * block) list) : (uid * insn) list = 
+  match l with
+  | [] -> []
+  | (_, {insns; _})::xs -> insns @ (unifier xs)
 
 let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout = 
   reg_layout args 0 @ (block_layout (block.insns @ unifier lbled_blocks) (Int64.neg 8L))

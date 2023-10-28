@@ -222,10 +222,15 @@ let mk_lbl (fn:string) (l:string) = fn ^ "." ^ l
    [fn] - the name of the function containing this terminator
 *)
 let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
-  failwith "compile_terminator not implemented"
+  match t with
+  |Ret (Void, _) -> let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in [(Addq, [Imm (Lit amount); Reg Rsp]);(Popq, [Reg Rbp]);(Retq, [])]
+  |Br x -> [(Jmp, [lookup ctxt.layout x])]
+  |Ret (_, Some (Id x)) | Ret (_, Some (Gid x))-> let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in [(Movq, [lookup ctxt.layout x; Reg Rax]);(Addq, [Imm (Lit amount); Reg Rsp]);(Popq, [Reg Rbp]);(Retq, [])]
+  |Ret (_, Some (Const x)) -> let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in [(Movq, [Imm (Lit x); Reg Rax]);(Addq, [Imm (Lit amount); Reg Rsp]);(Popq, [Reg Rbp]);(Retq, [])]
+  |Cbr ((Id x), y, z) | Cbr ((Gid x), y, z) -> [(Cmpq, [Imm(Lit 1L); lookup ctxt.layout x]);(J Eq,[lookup ctxt.layout y]); (Jmp, [lookup ctxt.layout y])]
 
 
-(* compiling blocks --------------------------------------------------------- *)
+(* compiling blocks -------------------- u------------------------------------- *)
 
 (* We have left this helper function here for you to complete. 
    [fn] - the name of the function containing this block

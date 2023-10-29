@@ -184,8 +184,34 @@ match t with
       in (4), but relative to the type f the sub-element picked out
       by the path so far
 *)
-let compile_gep (ctxt:ctxt) (op : Ll.ty * Ll.operand) (path: Ll.operand list) : ins list =
-failwith "compile_gep not implemented"
+let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list = 
+  match path with
+  | [] -> []
+  | x::xs ->
+    begin match t with
+    | Struct y -> 
+      let size =
+      begin match x with
+      | Const z -> z
+      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in [(Movq, [Imm (Lit size); Reg R09]); (Imulq, [Imm (Lit amount); Reg R09]); (Addq, [Reg R09; Reg R10])] @ helper_gep ctxt (List.nth y (Int64.to_int size)) xs
+    | Array (_, y) ->
+      let size =
+      begin match x with
+      | Const z -> Imm (Lit z)
+      | Gid z | Id z -> lookup ctxt.layout z
+      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in [(Movq, [size; Reg R09]); (Imulq, [Imm (Lit amount); Reg R09]); (Addq, [Reg R09; Reg R10])] @ helper_gep ctxt y xs
+    | _ -> let size =
+      begin match x with
+      | Const z -> Imm (Lit z)
+      | Gid z | Id z -> lookup ctxt.layout z
+      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in [(Movq, [size; Reg R09]); (Imulq, [Imm (Lit amount); Reg R09]); (Addq, [Reg R09; Reg R10])]
+    end
+      
+
+let compile_gep (ctxt:ctxt) (op : Ll.ty * Ll.operand) (path: Ll.operand list) : ins list = 
+  match op with
+  |(t, Const x) -> [(Leaq, [Imm (Lit x); Reg R10])] @ helper_gep ctxt t path
+  |(t, Gid x) | (t, Id x)-> let place = lookup ctxt.layout x in [(Leaq, [place; Reg R10])] @ helper_gep ctxt t path
 
 
 
@@ -262,7 +288,7 @@ let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
         | Icmp (cond, ty, op1, op2) -> []
         | Call (ty, op, operands) -> []
         | Bitcast (ty1, op, ty2) -> []
-        | Gep (ty, op, operands) -> []
+        | Gep (ty, op, operands) -> compile_gep ctxt (ty, op) operands @ [(Movq, [Reg R10; dest])]
         | _ -> []
         end
 

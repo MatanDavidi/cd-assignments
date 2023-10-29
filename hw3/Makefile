@@ -4,7 +4,7 @@ all: main.native
 test: main.native
 	./main.native --test
 
-main.native:
+main.native: backend.ml
 	ocamlbuild -Is util,x86,ll,grading -libs unix,str,nums main.native -use-menhir
 
 main.byte:

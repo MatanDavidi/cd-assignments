@@ -210,8 +210,15 @@ let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list =
 
 let compile_gep (ctxt:ctxt) (op : Ll.ty * Ll.operand) (path: Ll.operand list) : ins list = 
   match op with
-  |(t, Const x) -> [(Leaq, [Imm (Lit x); Reg R10])] @ helper_gep ctxt t path
-  |(t, Gid x) | (t, Id x)-> let place = lookup ctxt.layout x in [(Leaq, [place; Reg R10])] @ helper_gep ctxt t path
+  |(Ptr t, Const x) -> [(Leaq, [Imm (Lit x); Reg R10])] @ helper_gep ctxt t path
+  |(Ptr t, Gid x) ->
+    let mgld_lbl = Platform.mangle x in
+    let place = (print_endline ("looking up " ^ mgld_lbl)); lookup ctxt.layout mgld_lbl in 
+    (print_endline ("I looked up " ^ mgld_lbl)); [(Leaq, [place; Reg R10])] @ helper_gep ctxt t path
+  | (t, Id x) -> 
+    let place = (print_endline ("looking up " ^ x)); lookup ctxt.layout x in 
+    (print_endline ("I looked up " ^ x)); [(Leaq, [place; Reg R10])] @ helper_gep ctxt t path
+  | _ -> []
 
 
 
@@ -244,8 +251,11 @@ let compile_bop (ctxt:ctxt) (bop:bop) (op1:Ll.operand) (op2:Ll.operand) (dest:X8
   | Xor -> compiled_op1 :: [(Xorq, [x86op2; temp_reg]); temp_to_dest_transf]
   end
 
-let compile_alloca (ty:ty) (layout:layout) =
-  []
+let compile_alloca (ty:ty) (tdecls:(lbl * ty) list) (dest:X86.operand) : X86.ins list =
+  let ty_size = Int64.of_int (size_ty tdecls ty) in
+  let stack_allocation = (Subq, [Imm (Lit ty_size); Reg Rsp]) in
+  let pointer_comp = (Leaq, [Reg Rsp; dest]) in
+  [stack_allocation; pointer_comp]
 
 let compile_load (op:Ll.operand) (dest:X86.operand) (layout:layout) : X86.ins list =
   begin match op with
@@ -283,12 +293,12 @@ let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.opera
   let op1_to_temp = (Movq, [x86_op1; temp_reg]) in
   let comp = (Cmpq, [temp_reg; x86_op2]) in 
   match cond with
-  | Eq -> [op1_to_temp; comp; (Set Eq, [])]
-  | Ne ->  [op1_to_temp; comp; (Set Neq, [])]
-  | Slt -> [op1_to_temp; comp; (Set Lt, [])]
-  | Sle -> [op1_to_temp; comp; (Set Le, [])]
-  | Sgt -> [op1_to_temp; comp; (Set Gt, [])]
-  | Sge -> [op1_to_temp; comp; (Set Ge, [])]
+  | Eq -> [op1_to_temp; comp; (Set Eq, [dest])]
+  | Ne -> [op1_to_temp; comp; (Set Neq, [dest])]
+  | Slt -> [op1_to_temp; comp; (Set Lt, [dest])]
+  | Sle -> [op1_to_temp; comp; (Set Le, [dest])]
+  | Sgt -> [op1_to_temp; comp; (Set Gt, [dest])]
+  | Sge -> [op1_to_temp; comp; (Set Ge, [dest])]
 
 (* The result of compiling a single LLVM instruction might be many x86
    instructions.  We have not determined the structure of this code
@@ -317,7 +327,7 @@ let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
         let dest = lookup layout uid in
         begin match i with
         | Binop (bop, _, op1, op2) -> compile_bop ctxt bop op1 op2 dest layout
-        | Alloca ty -> compile_alloca ty layout
+        | Alloca ty -> compile_alloca ty tdecls dest
         | Load (_, op) -> compile_load op dest layout
         | Store (_, op1, op2) -> compile_store op1 op2 layout
         | Icmp (cond, ty, op1, op2) -> compile_icmp cond op1 op2 dest layout

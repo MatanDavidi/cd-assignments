@@ -223,8 +223,72 @@ let resolve_op (op:Ll.operand) (layout:layout) =
   | Const n -> Imm (Lit n)
   | Gid id | Id id -> lookup layout id
 
-let compile_binop (op1:X86.operand) (op2:X86.operand) (dest:X86.operand) (opcode:opcode) =
+let ll_to_x86_binop (op1:X86.operand) (op2:X86.operand) (dest:X86.operand) (opcode:opcode) =
   [(Movq, [op2; dest]); (opcode, [op1; dest])]
+
+let compile_bop (ctxt:ctxt) (bop:bop) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.operand) (layout:layout) : X86.ins list =
+  let temp_reg = (Reg R10) in
+  let operand_assign = compile_operand ctxt temp_reg in
+  let compiled_op1 = operand_assign op1 in
+  let x86op2 = resolve_op op2 layout in
+  let temp_to_dest_transf = (Movq, [temp_reg; dest]) in
+  begin match bop with
+  | Add -> compiled_op1 :: [(Addq, [x86op2; temp_reg]); temp_to_dest_transf]
+  | Sub -> compiled_op1 :: [(Subq, [x86op2; temp_reg]); temp_to_dest_transf]
+  | Mul -> compiled_op1 :: [(Imulq, [x86op2; temp_reg]); temp_to_dest_transf]
+  | Shl -> compiled_op1 :: [(Shlq, [x86op2; temp_reg]); temp_to_dest_transf]
+  | Lshr -> compiled_op1 :: [(Shrq, [x86op2; temp_reg]); temp_to_dest_transf]
+  | Ashr -> compiled_op1 :: [(Sarq, [x86op2; temp_reg]); temp_to_dest_transf]
+  | And -> compiled_op1 :: [(Andq, [x86op2; temp_reg]); temp_to_dest_transf]
+  | Or -> compiled_op1 :: [(Orq, [x86op2; temp_reg]); temp_to_dest_transf]
+  | Xor -> compiled_op1 :: [(Xorq, [x86op2; temp_reg]); temp_to_dest_transf]
+  end
+
+let compile_alloca (ty:ty) (layout:layout) =
+  []
+
+let compile_load (op:Ll.operand) (dest:X86.operand) (layout:layout) : X86.ins list =
+  begin match op with
+  | Null | Const _ -> []
+  | Gid id | Id id -> [(Movq, [(lookup layout id); dest])]
+  end
+
+let compile_store (op1:Ll.operand) (op2:Ll.operand) (layout:layout) : X86.ins list =
+  begin match op1 with
+  | Null -> []
+  | _ -> 
+    let x86op1 = resolve_op op1 layout in
+    begin match op2 with
+    | Null | Const _ -> []
+    | _ -> 
+      let x86op2 = resolve_op op2 layout in
+        match (x86op1, x86op2) with
+        | (Ind1 _, Ind1 _) -> [(Movq, [x86op1; Reg R10]); (Movq, [Reg R10; x86op2])]
+        | (Ind1 _, Ind2 _) -> [(Movq, [x86op1; Reg R10]); (Movq, [Reg R10; x86op2])]
+        | (Ind1 _, Ind3 _) -> [(Movq, [x86op1; Reg R10]); (Movq, [Reg R10; x86op2])]
+        | (Ind2 _, Ind1 _) -> [(Movq, [x86op1; Reg R10]); (Movq, [Reg R10; x86op2])]
+        | (Ind2 _, Ind2 _) -> [(Movq, [x86op1; Reg R10]); (Movq, [Reg R10; x86op2])]
+        | (Ind2 _, Ind3 _) -> [(Movq, [x86op1; Reg R10]); (Movq, [Reg R10; x86op2])]
+        | (Ind3 _, Ind1 _) -> [(Movq, [x86op1; Reg R10]); (Movq, [Reg R10; x86op2])]
+        | (Ind3 _, Ind2 _) -> [(Movq, [x86op1; Reg R10]); (Movq, [Reg R10; x86op2])]
+        | (Ind3 _, Ind3 _) -> [(Movq, [x86op1; Reg R10]); (Movq, [Reg R10; x86op2])]
+        | _ -> [Movq, [x86op1; x86op2]]
+    end
+  end
+
+let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.operand) (layout:layout) : X86.ins list =
+  let x86_op1 = resolve_op op1 layout in
+  let x86_op2 = resolve_op op2 layout in
+  let temp_reg = Reg R10 in
+  let op1_to_temp = (Movq, [x86_op1; temp_reg]) in
+  let comp = (Cmpq, [temp_reg; x86_op2]) in 
+  match cond with
+  | Eq -> [op1_to_temp; comp; (Set Eq, [])]
+  | Ne ->  [op1_to_temp; comp; (Set Neq, [])]
+  | Slt -> [op1_to_temp; comp; (Set Lt, [])]
+  | Sle -> [op1_to_temp; comp; (Set Le, [])]
+  | Sgt -> [op1_to_temp; comp; (Set Gt, [])]
+  | Sge -> [op1_to_temp; comp; (Set Ge, [])]
 
 (* The result of compiling a single LLVM instruction might be many x86
    instructions.  We have not determined the structure of this code
@@ -252,40 +316,11 @@ let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
       | { tdecls : (lbl * ty) list; layout : layout; } -> 
         let dest = lookup layout uid in
         begin match i with
-        | Binop (bop, ty, op1, op2) -> 
-          let x86op1 = resolve_op op1 layout in
-          let x86op2 = resolve_op op2 layout in
-          begin match bop with
-          | Add -> compile_binop x86op1 x86op2 dest Addq
-          | Sub -> compile_binop x86op1 x86op2 dest Subq
-          | Mul -> compile_binop x86op1 x86op2 dest Imulq
-          | Shl -> compile_binop x86op1 x86op2 dest Shlq
-          | Lshr -> compile_binop x86op1 x86op2 dest Shrq
-          | Ashr -> compile_binop x86op1 x86op2 dest Sarq
-          | And -> compile_binop x86op1 x86op2 dest Andq
-          | Or -> compile_binop x86op1 x86op2 dest Orq
-          | Xor -> compile_binop x86op1 x86op2 dest Xorq
-          end
-        | Alloca ty -> []
-        | Load (_, op) -> 
-          begin match op with
-          | Null -> []
-          | Const n -> []
-          | Gid id | Id id -> [Movq, [(lookup layout id); dest]]
-          end
-        | Store (_, op1, op2) ->
-          begin match op1 with
-          | Null -> []
-          | _ -> 
-            let x86op1 = resolve_op op1 layout in
-            begin match op2 with
-            | Null | Const _ -> []
-            | _ -> 
-              let x86op2 = resolve_op op2 layout in
-              [Movq, [x86op1; x86op2]]
-            end
-          end
-        | Icmp (cond, ty, op1, op2) -> []
+        | Binop (bop, _, op1, op2) -> compile_bop ctxt bop op1 op2 dest layout
+        | Alloca ty -> compile_alloca ty layout
+        | Load (_, op) -> compile_load op dest layout
+        | Store (_, op1, op2) -> compile_store op1 op2 layout
+        | Icmp (cond, ty, op1, op2) -> compile_icmp cond op1 op2 dest layout
         | Call (ty, op, operands) -> []
         | Bitcast (ty1, op, ty2) -> []
         | Gep (ty, op, operands) -> compile_gep ctxt (ty, op) operands @ [(Movq, [Reg R10; dest])]

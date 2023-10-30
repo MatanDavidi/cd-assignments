@@ -90,16 +90,17 @@ let lookup m x = List.assoc x m
    destination (usually a register).
 *)
 let compile_operand (ctxt:ctxt) (dest:X86.operand) : Ll.operand -> ins =
-  fun (op: Ll.operand) -> 
-    let (oprd: X86.operand) =
+  fun (op: Ll.operand) ->
       match ctxt with
-      | { tdecls : (lbl * ty) list; layout : layout; } -> 
+      | { tdecls : (lbl * ty) list; layout : layout; } ->
         match op with
-        | Null -> Imm (Lit 0L)
-        | Const x -> Imm (Lit x)
-        | Gid lbl | Id lbl -> lookup layout lbl
-    in
-    (Movq, [oprd; dest])
+        | Null -> (Movq, [Imm (Lit 0L); dest])
+        | Const x -> (Movq, [Imm (Lit x); dest])
+        | Gid lbl ->
+          let mgld_lbl = Platform.mangle lbl in
+          (Leaq, [Ind3 ((Lbl mgld_lbl), Rip); dest])
+        | Id lbl -> (Movq, [lookup layout lbl; dest])
+
 
 
 
@@ -184,40 +185,64 @@ match t with
       in (4), but relative to the type f the sub-element picked out
       by the path so far
 *)
-let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list = 
+let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list =
   match path with
   | [] -> []
   | x::xs ->
     begin match t with
-    | Struct y -> 
+    | Struct y ->
       let size =
       begin match x with
       | Const z -> z
-      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in [(Movq, [Imm (Lit size); Reg R09]); (Imulq, [Imm (Lit amount); Reg R09]); (Addq, [Reg R09; Reg R10])] @ helper_gep ctxt (List.nth y (Int64.to_int size)) xs
+      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in
+      [
+        (Movq, [Imm (Lit size); Reg R09]);
+        (Imulq, [Imm (Lit amount); Reg R09]);
+        (Addq, [Reg R09; Reg R10])
+        ] @ helper_gep ctxt (List.nth y (Int64.to_int size)) xs
     | Array (_, y) ->
       let size =
       begin match x with
       | Const z -> Imm (Lit z)
-      | Gid z | Id z -> lookup ctxt.layout z
-      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in [(Movq, [size; Reg R09]); (Imulq, [Imm (Lit amount); Reg R09]); (Addq, [Reg R09; Reg R10])] @ helper_gep ctxt y xs
+      | Gid z ->
+        let mgld_lbl = Platform.mangle z in
+        lookup ctxt.layout mgld_lbl
+      | Id z -> lookup ctxt.layout z
+      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in
+      [
+        (Movq, [size; Reg R09]);
+        (Imulq, [Imm (Lit amount); Reg R09]);
+        (Addq, [Reg R09; Reg R10])
+        ] @ helper_gep ctxt y xs
     | _ -> let size =
       begin match x with
       | Const z -> Imm (Lit z)
-      | Gid z | Id z -> lookup ctxt.layout z
-      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in [(Movq, [size; Reg R09]); (Imulq, [Imm (Lit amount); Reg R09]); (Addq, [Reg R09; Reg R10])]
+      | Gid z ->
+        let mgld_lbl = Platform.mangle z in
+        lookup ctxt.layout mgld_lbl
+      | Id z -> lookup ctxt.layout z
+      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in
+      [
+        (Movq, [size; Reg R09]);
+        (Imulq, [Imm (Lit amount); Reg R09]);
+        (Addq, [Reg R09; Reg R10])
+        ]
     end
-      
 
-let compile_gep (ctxt:ctxt) (op : Ll.ty * Ll.operand) (path: Ll.operand list) : ins list = 
+let compile_gep (ctxt:ctxt) (op : Ll.ty * Ll.operand) (path: Ll.operand list) : ins list =
   match op with
   |(Ptr t, Const x) -> [(Leaq, [Imm (Lit x); Reg R10])] @ helper_gep ctxt t path
   |(Ptr t, Gid x) ->
-    let mgld_lbl = Platform.mangle x in
-    let place = (print_endline ("looking up " ^ mgld_lbl)); lookup ctxt.layout mgld_lbl in 
-    (print_endline ("I looked up " ^ mgld_lbl)); [(Leaq, [place; Reg R10])] @ helper_gep ctxt t path
-  | (t, Id x) -> 
-    let place = (print_endline ("looking up " ^ x)); lookup ctxt.layout x in 
-    (print_endline ("I looked up " ^ x)); [(Leaq, [place; Reg R10])] @ helper_gep ctxt t path
+    (* let mgld_lbl = Platform.mangle x in
+    let place = (print_endline ("looking up GID " ^ mgld_lbl)); lookup ctxt.layout mgld_lbl in
+    (print_endline ("I looked up GID " ^ mgld_lbl)); [(Leaq, [place; Reg R10])] @ helper_gep ctxt t path *)
+    let place = (print_endline ("looking up GID " ^ x)); compile_operand ctxt (Reg R10) (Gid x) in
+    (print_endline ("I looked up GID " ^ x)); [place] @ helper_gep ctxt t path
+  | (Ptr t, Id x) ->
+    (* let place = (print_endline ("looking up ID " ^ x)); lookup ctxt.layout x in
+    (print_endline ("I looked up ID " ^ x)); [(Leaq, [place; Reg R10])] @ helper_gep ctxt t path *)
+    let place = (print_endline ("looking up ID " ^ x));compile_operand ctxt (Reg R10) (Id x) in
+    [place] @ helper_gep ctxt t path
   | _ -> []
 
 
@@ -228,10 +253,10 @@ let resolve_op (op:Ll.operand) (layout:layout) =
   match op with
   | Null -> Imm (Lit 0L)
   | Const n -> Imm (Lit n)
-  | Gid id | Id id -> lookup layout id
-
-let ll_to_x86_binop (op1:X86.operand) (op2:X86.operand) (dest:X86.operand) (opcode:opcode) =
-  [(Movq, [op2; dest]); (opcode, [op1; dest])]
+  | Gid id ->
+    let mgld_lbl = Platform.mangle id in
+    lookup layout mgld_lbl
+  | Id id -> lookup layout id
 
 let compile_bop (ctxt:ctxt) (bop:bop) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.operand) (layout:layout) : X86.ins list =
   let temp_reg = (Reg R10) in
@@ -254,23 +279,31 @@ let compile_bop (ctxt:ctxt) (bop:bop) (op1:Ll.operand) (op2:Ll.operand) (dest:X8
 let compile_alloca (ty:ty) (tdecls:(lbl * ty) list) (dest:X86.operand) : X86.ins list =
   let ty_size = Int64.of_int (size_ty tdecls ty) in
   let stack_allocation = (Subq, [Imm (Lit ty_size); Reg Rsp]) in
-  let pointer_comp = (Leaq, [Reg Rsp; dest]) in
-  [stack_allocation; pointer_comp]
+  let temp_reg = Reg R10 in
+  let pointer_comp = [(Leaq, [Ind2 Rsp; temp_reg]); (Movq, [temp_reg; dest])] in
+  [stack_allocation] @ pointer_comp
 
-let compile_load (op:Ll.operand) (dest:X86.operand) (layout:layout) : X86.ins list =
-  begin match op with
+let compile_load (ctxt:ctxt) (op:Ll.operand) (dest:X86.operand) (layout:layout) : X86.ins list =
+  let temp_reg = Reg R10 in
+  let operand_assign = compile_operand ctxt temp_reg in
+  let compiled_op = operand_assign op in
+  [compiled_op]
+  (* begin match op with
   | Null | Const _ -> []
-  | Gid id | Id id -> [(Movq, [(lookup layout id); dest])]
-  end
+  | Gid id ->
+    let mgld_lbl = Platform.mangle id in
+    [(Movq, [(lookup layout mgld_lbl); dest])]
+  | Id id -> [temp_to_dest_transf; (Movq, [temp_reg; dest])]
+  end *)
 
 let compile_store (op1:Ll.operand) (op2:Ll.operand) (layout:layout) : X86.ins list =
   begin match op1 with
   | Null -> []
-  | _ -> 
+  | _ ->
     let x86op1 = resolve_op op1 layout in
     begin match op2 with
     | Null | Const _ -> []
-    | _ -> 
+    | _ ->
       let x86op2 = resolve_op op2 layout in
         match (x86op1, x86op2) with
         | (Ind1 _, Ind1 _) -> [(Movq, [x86op1; Reg R10]); (Movq, [Reg R10; x86op2])]
@@ -291,7 +324,7 @@ let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.opera
   let x86_op2 = resolve_op op2 layout in
   let temp_reg = Reg R10 in
   let op1_to_temp = (Movq, [x86_op1; temp_reg]) in
-  let comp = (Cmpq, [temp_reg; x86_op2]) in 
+  let comp = (Cmpq, [temp_reg; x86_op2]) in
   match cond with
   | Eq -> [op1_to_temp; comp; (Set Eq, [dest])]
   | Ne -> [op1_to_temp; comp; (Set Neq, [dest])]
@@ -323,15 +356,15 @@ let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.opera
 *)
 let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
       match ctxt with
-      | { tdecls : (lbl * ty) list; layout : layout; } -> 
+      | { tdecls : (lbl * ty) list; layout : layout; } ->
         let dest = lookup layout uid in
         begin match i with
         | Binop (bop, _, op1, op2) -> compile_bop ctxt bop op1 op2 dest layout
         | Alloca ty -> compile_alloca ty tdecls dest
-        | Load (_, op) -> compile_load op dest layout
+        | Load (_, op) -> compile_load ctxt op dest layout
         | Store (_, op1, op2) -> compile_store op1 op2 layout
-        | Icmp (cond, ty, op1, op2) -> compile_icmp cond op1 op2 dest layout
-        | Call (ty, op, operands) -> []
+        | Icmp (cond, _, op1, op2) -> compile_icmp cond op1 op2 dest layout
+        | Call (_, op, operands) -> [] (* compile_call op operands layout *)
         | Bitcast (ty1, op, ty2) -> []
         | Gep (ty, op, operands) -> compile_gep ctxt (ty, op) operands @ [(Movq, [Reg R10; dest])]
         | _ -> []
@@ -341,7 +374,7 @@ let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
 
 (* compiling terminators  --------------------------------------------------- *)
 
-(* prefix the function name [fn] to a label to ensure that the X86 labels are 
+(* prefix the function name [fn] to a label to ensure that the X86 labels are
    globally unique . *)
 let mk_lbl (fn:string) (l:string) = fn ^ "." ^ l
 
@@ -360,7 +393,7 @@ let mk_lbl (fn:string) (l:string) = fn ^ "." ^ l
 let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
   match t with
   |Ret (Void, _) -> let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in [(Addq, [Imm (Lit amount); Reg Rsp]);(Popq, [Reg Rbp]);(Retq, [])]
-  |Br x -> [(Jmp, [lookup ctxt.layout x])]
+  |Br x -> List.iter (fun (a, b) -> Printf.printf "%s\n" (string_of_operand b)) ctxt.layout; [(Jmp, [lookup ctxt.layout x])]
   |Ret (_, Some (Id x)) | Ret (_, Some (Gid x))-> let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in [(Movq, [lookup ctxt.layout x; Reg Rax]);(Addq, [Imm (Lit amount); Reg Rsp]);(Popq, [Reg Rbp]);(Retq, [])]
   |Ret (_, Some (Const x)) -> let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in [(Movq, [Imm (Lit x); Reg Rax]);(Addq, [Imm (Lit amount); Reg Rsp]);(Popq, [Reg Rbp]);(Retq, [])]
   |Cbr ((Id x), y, z) | Cbr ((Gid x), y, z) -> [(Cmpq, [Imm(Lit 1L); lookup ctxt.layout x]);(J Eq,[lookup ctxt.layout y]); (Jmp, [lookup ctxt.layout y])]
@@ -368,14 +401,14 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
 
 (* compiling blocks --------------------------------------------------------- *)
 
-(* We have left this helper function here for you to complete. 
+(* We have left this helper function here for you to complete.
    [fn] - the name of the function containing this block
    [ctxt] - the current context
    [blk]  - LLVM IR code for the block
 *)
 let compile_block (fn:string) (ctxt:ctxt) (blk:Ll.block) : ins list =
   match blk with
-  | { insns : (lbl * insn) list; term : lbl * terminator; } -> 
+  | { insns : (lbl * insn) list; term : lbl * terminator; } ->
     match term with
     | (lbl, terminator) -> List.concat_map (compile_insn ctxt) insns @ (compile_terminator lbl ctxt terminator)
 
@@ -421,44 +454,44 @@ match xs with
 
 let block_layout (insns : (uid * insn) list) (offset:quad) : layout =
   let offset = ref offset in
-  List.concat (List.map (fun (ins: (uid * insn)) : layout -> 
+  List.concat (List.map (fun (ins: (uid * insn)) : layout ->
     match ins with
-    | (uid, instr) -> 
-      let pair = 
+    | (uid, instr) ->
+      let pair =
         match instr with
-        | Binop _ -> let old_offset = 
-          !offset in offset := Int64.sub !offset 8L; 
-          [(uid, Ind3 (Lit old_offset, Rbp))]
-        | Alloca _ -> let old_offset = 
+        | Binop _ -> let old_offset =
           !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
-        | Load _ -> let old_offset = 
+        | Alloca _ -> let old_offset =
+          !offset in offset := Int64.sub !offset 8L;
+          [(uid, Ind3 (Lit old_offset, Rbp))]
+        | Load _ -> let old_offset =
           !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
         | Store _ -> []
-        | Icmp _ -> let old_offset = 
+        | Icmp _ -> let old_offset =
           !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
         | Call (Void, _, _) -> []
-        | Call _ -> let old_offset = 
+        | Call _ -> let old_offset =
           !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
-        | Bitcast _ -> let old_offset = 
+        | Bitcast _ -> let old_offset =
           !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
-        | Gep _ -> let old_offset = 
+        | Gep _ -> let old_offset =
           !offset in offset := Int64.sub !offset 8L;
           [(uid, Ind3 (Lit old_offset, Rbp))]
       in
       pair
      ) insns)
 
-let rec unifier (l : (lbl * block) list) : (uid * insn) list = 
+let rec unifier (l : (lbl * block) list) : (uid * insn) list =
   match l with
   | [] -> []
   | (_, {insns; _})::xs -> insns @ (unifier xs)
 
-let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout = 
+let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout =
   reg_layout args 0 @ (block_layout (block.insns @ unifier lbled_blocks) (Int64.neg 8L))
 
 (* The code for the entry-point of a function must do several things:
@@ -481,23 +514,32 @@ let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout =
 (* `f_param` is a list of unique identifiers for the function parameters *)
 (* `f_cfg` is a control flow graph that represents the body of the function *)
 let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg }:fdecl) : prog =
-  [
-    { lbl = name; global = true; asm = 
+  match f_cfg with
+  | (entry, blocks) ->
     let params_layout = (stack_layout f_param f_cfg) in
     let params_length = (Int64.mul 8L (Int64.of_int (List.length tdecls))) in
-    match f_cfg with
-    | (entry, blocks) ->
-      let ctxt = { tdecls = tdecls; layout = params_layout } in
-      let first_list = [
-        (Pushq, [Reg Rbp]);
-        (Movq, [Reg Rsp; Reg Rbp]);
-        (Subq, [Imm (Lit params_length); Reg Rsp])] in
-      let snd_list = [(Addq, [Imm (Lit params_length); Reg Rsp]);
+    let ctxt = { tdecls = tdecls; layout = params_layout } in
+    let entry_ins = (compile_block name ctxt entry) in
+    let blocks_asm = List.map (fun (lbl, blk) -> compile_lbl_block name lbl ctxt blk) blocks in
+    let first_list : ins list = [
+      (Pushq, [Reg Rbp]);
+      (Movq, [Reg Rsp; Reg Rbp]);
+      (Subq, [Imm (Lit params_length); Reg Rsp])
+    ] 
+    in
+    let snd_list = [
+      (Addq, [Imm (Lit params_length); Reg Rsp]);
       (Popq, [Reg Rbp]);
-      (Retq, [])] in
-      ( Text (List.concat [first_list; (compile_block name ctxt entry); (List.concat_map (fun (lbl, block) -> compile_block lbl ctxt block) blocks); snd_list]) )
-    }
-  ]
+      (Retq, [])
+    ] 
+    in
+    [
+      { lbl = name; global = true; asm = (Text (first_list @ entry_ins @ snd_list)) }
+    ] @ blocks_asm
+      (* { lbl = Platform.mangle name; global = true; asm = first_list @  }
+      ( Text (List.concat [first_list; (compile_block name ctxt entry); (List.concat_map (fun (lbl, block) -> compile_block lbl ctxt block) blocks); snd_list]) ) *)
+      (* let block_lbls = (List.map (fun (lbl, block) -> compile_lbl_block name lbl ctxt block) blocks) in *)
+      (* ( Text (List.concat [first_list; (compile_block name ctxt entry); ; snd_list]) ) *)
 
 
 

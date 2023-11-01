@@ -326,7 +326,7 @@ let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.opera
   let x86_op2 = resolve_op op2 layout in
   let temp_reg = Reg R10 in
   let op1_to_temp = (Movq, [x86_op1; temp_reg]) in
-  let comp = (Cmpq, [temp_reg; x86_op2]) in
+  let comp = (Cmpq, [x86_op2; temp_reg]) in
   match cond with
   | Eq -> [op1_to_temp; comp; (Set Eq, [dest])]
   | Ne -> [op1_to_temp; comp; (Set Neq, [dest])]

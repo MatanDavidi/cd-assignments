@@ -343,6 +343,30 @@ let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.opera
   | Sgt -> [op1_to_temp; comp; (Set Gt, [dest])]
   | Sge -> [op1_to_temp; comp; (Set Ge, [dest])]
 
+  let call_first_reg_helper (n : int) (op:X86.operand) : ins =
+    match n with
+    | 0 -> (Movq, [op; Reg Rdi])
+    | 1 -> (Movq, [op; Reg Rsi])
+    | 2 -> (Movq, [op; Reg Rdx])
+    | 3 -> (Movq, [op; Reg Rcx])
+    | 4 -> (Movq, [op; Reg R08])
+    | 5 -> (Movq, [op; Reg R09])
+    | _ -> (Movq, [op; Reg R10]) (* (Pushq, [Ind3 ( Lit ( Int64.mul 8L (Int64.sub (Int64.of_int n) 5L ) ) , Rbp )]) *)
+
+let compile_call (fn:Ll.operand) (operands:(ty * Ll.operand) list) (ctxt:ctxt) : ins list =
+  match fn with
+  | Null | Const _ -> []
+  | Gid lbl | Id lbl ->
+  let j_setup = 
+    List.concat ( List.mapi (
+      fun i ((_, op):(ty * Ll.operand)) -> 
+        (compile_operand_full ctxt (Reg R10) op) @ [(call_first_reg_helper i (Reg R10))]
+    ) operands)
+  in
+  j_setup @
+  [
+    (Callq, [Imm (Lbl (Platform.mangle lbl))])
+  ]
 (* The result of compiling a single LLVM instruction might be many x86
    instructions.  We have not determined the structure of this code
    for you. Some of the instructions require only a couple of assembly
@@ -365,19 +389,19 @@ let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.opera
    - Bitcast: does nothing interesting at the assembly level
 *)
 let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
-      match ctxt with
-      | { tdecls : (lbl * ty) list; layout : layout; } ->
-        let dest = lookup layout uid in
-        begin match i with
-        | Binop (bop, _, op1, op2) -> compile_bop ctxt bop op1 op2 dest layout
-        | Alloca ty -> compile_alloca tdecls ty dest
-        | Load (_, op) -> compile_load ctxt op dest layout
-        | Store (_, op1, op2) -> compile_store ctxt op1 op2 layout
-        | Icmp (cond, _, op1, op2) -> compile_icmp cond op1 op2 dest layout
-        | Call (_, op, operands) -> [] (* compile_call op operands layout *)
-        | Bitcast (ty1, op, ty2) -> []
-        | Gep (ty, op, operands) -> compile_gep ctxt (ty, op) operands @ [(Movq, [Reg R10; dest])]
-        end
+  match ctxt with
+  | { tdecls : (lbl * ty) list; layout : layout; } ->
+    let dest = lookup layout uid in
+    begin match i with
+    | Binop (bop, _, op1, op2) -> compile_bop ctxt bop op1 op2 dest layout
+    | Alloca ty -> compile_alloca tdecls ty dest
+    | Load (_, op) -> compile_load ctxt op dest layout
+    | Store (_, op1, op2) -> compile_store ctxt op1 op2 layout
+    | Icmp (cond, _, op1, op2) -> compile_icmp cond op1 op2 dest layout
+    | Call (_, op, operands) -> compile_call op operands ctxt
+    | Bitcast (ty1, op, ty2) -> []
+    | Gep (ty, op, operands) -> compile_gep ctxt (ty, op) operands @ [(Movq, [Reg R10; dest])]
+    end
 
 
 
@@ -403,6 +427,7 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
   let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in 
   match t with
   | Ret (Void, _) -> 
+    print_endline "Returnami stocazzo";
     [(Addq, [Imm (Lit amount); Reg Rsp]);
     (Movq, [Reg Rbp; Reg Rsp]);
     (Popq, [Reg Rbp]);
@@ -414,6 +439,7 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
       fun (a, b) -> Printf.printf "%s\n" (string_of_operand b)
     ) ctxt.layout; [(Jmp, [lookup ctxt.layout x])] *)
   | Ret (_, Some (Id x)) | Ret (_, Some (Gid x))-> 
+    print_endline "Returnami st'altro cazzo";
     [
       (Movq, [lookup ctxt.layout x; Reg Rax]);
       (Addq, [Imm (Lit amount); Reg Rsp]);
@@ -422,6 +448,7 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
       (Retq, [])
     ]
   | Ret (_, Some (Const x)) -> 
+    print_endline "Returnami il terzo cazzo";
     [
       (Movq, [Imm (Lit x); Reg Rax]);
       (Addq, [Imm (Lit amount); Reg Rsp]);
@@ -430,6 +457,9 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
       (Retq, [])
     ]
   | Cbr ((Id x), y, z) | Cbr ((Gid x), y, z) -> 
+    print_endline "Returnami stocazzo condizionalmente";
+    print_endline ("Sto cercando x: " ^ x);
+    List.iter (fun (u, o) -> Printf.printf "%s: %s\n" u (string_of_operand o)) ctxt.layout;
     [
       (Cmpq, [Imm(Lit 1L); lookup ctxt.layout (Platform.mangle x)]);
       (J Eq,[Imm (Lbl (mk_lbl fn y))]); 
@@ -446,10 +476,11 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
    [blk]  - LLVM IR code for the block
 *)
 let compile_block (fn:string) (ctxt:ctxt) (blk:Ll.block) : ins list =
+  print_endline "Qua sicuro";
   match blk with
   | { insns : (lbl * insn) list; term : lbl * terminator; } ->
     match term with
-    | (_, terminator) -> List.concat_map (compile_insn ctxt) insns @ (compile_terminator fn ctxt terminator)
+    | (_, terminator) -> print_endline "Potarello"; (List.concat_map (compile_insn ctxt) insns) @ (print_endline "cane papera"; compile_terminator fn ctxt terminator)
 
 let compile_lbl_block fn lbl ctxt blk : elem =
   Asm.text (mk_lbl fn lbl) (compile_block fn ctxt blk)
@@ -508,7 +539,7 @@ let rec unifier (l : (lbl * block) list) : (uid * insn) list =
   | (_, {insns; _})::xs -> insns @ (unifier xs)
 
 let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout =
-  let uids_all = (List.map fst block.insns) @ (List.map fst lbled_blocks) in
+  let uids_all = (List.map fst block.insns) @ (List.map fst lbled_blocks) @ (List.concat_map (fun bl -> List.map fst bl.insns) (List.map snd lbled_blocks)) in
   reg_layout args 0 @ (block_layout (uids_all) 0L)
 
 (* The code for the entry-point of a function must do several things:
@@ -531,29 +562,36 @@ let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout =
 (* `f_param` is a list of unique identifiers for the function parameters *)
 (* `f_cfg` is a control flow graph that represents the body of the function *)
 let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg }:fdecl) : prog =
+  print_endline "Hello my baby fdecl";
   match f_cfg with
   | (entry, blocks) ->
-    let uids_all = (List.map fst (fst f_cfg).insns) @ (List.map fst (snd f_cfg)) in
+    let uids_all = (List.map fst (fst f_cfg).insns) @ (List.map fst (snd f_cfg)) @ (List.concat_map (fun bl -> List.map fst bl.insns) (List.map snd (snd f_cfg))) in
+    print_endline "Got uids";
     let params_layout = (stack_layout f_param f_cfg) in
+    print_endline "Got layout";
     (* List.iter (fun (a, b) -> (Printf.printf "%s: %s\n" a (string_of_operand b))) params_layout; *)
     let params_length = Int64.mul 8L (Int64.of_int ((List.length uids_all) - 1)) in
+    print_endline "Got params length";
     (* Printf.printf "Params length: %d \n" (Int64.to_int params_length);
     raise Exit; *)
     let ctxt = { tdecls = tdecls; layout = params_layout } in
+    print_endline "Got ctxt";
     let entry_ins = (compile_block name ctxt entry) in
-    let blocks_asm = List.map (fun (lbl, blk) -> compile_lbl_block name lbl ctxt blk) blocks in
+    print_endline "Got entry block instructions";
+    let blocks_asm = List.map (fun (lbl, blk) -> (print_endline ("I'm inside ... " ^ lbl)); compile_lbl_block name lbl ctxt blk) blocks in
+    print_endline "Got all blocks instructions";
     let first_list : ins list = [
       (Pushq, [Reg Rbp]);
       (Movq, [Reg Rsp; Reg Rbp]);
       (Subq, [Imm (Lit params_length); Reg Rsp])
-    ] 
+    ]
     in
     let snd_list = [
       (Addq, [Imm (Lit params_length); Reg Rsp]);
       (Movq, [Reg Rsp; Reg Rbp]);
       (Popq, [Reg Rbp]);
       (Retq, [])
-    ] 
+    ]
     in
     [Asm.gtext (Platform.mangle name) (first_list @ entry_ins @ snd_list)] @
     blocks_asm

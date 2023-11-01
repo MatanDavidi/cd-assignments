@@ -397,9 +397,11 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
     let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in 
     [(Addq, [Imm (Lit amount); Reg Rsp]);(Popq, [Reg Rbp]);(Retq, [])]
   | Br x -> 
-    List.iter (
+    let mgld_lbl = mk_lbl fn x in
+    [(Jmp, [Imm (Lbl mgld_lbl)])]
+    (* List.iter (
       fun (a, b) -> Printf.printf "%s\n" (string_of_operand b)
-    ) ctxt.layout; [(Jmp, [lookup ctxt.layout x])]
+    ) ctxt.layout; [(Jmp, [lookup ctxt.layout x])] *)
   | Ret (_, Some (Id x)) | Ret (_, Some (Gid x))-> 
     let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in 
     [
@@ -416,9 +418,9 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
     ]
   | Cbr ((Id x), y, z) | Cbr ((Gid x), y, z) -> 
     [
-      (Cmpq, [Imm(Lit 1L); lookup ctxt.layout x]);
-      (J Eq,[lookup ctxt.layout y]); 
-      (Jmp, [lookup ctxt.layout z])
+      (Cmpq, [Imm(Lit 1L); lookup ctxt.layout (Platform.mangle x)]);
+      (J Eq,[Imm (Lbl (mk_lbl fn y))]); 
+      (Jmp, [Imm (Lbl (mk_lbl fn z))])
     ]
 
 
@@ -433,7 +435,7 @@ let compile_block (fn:string) (ctxt:ctxt) (blk:Ll.block) : ins list =
   match blk with
   | { insns : (lbl * insn) list; term : lbl * terminator; } ->
     match term with
-    | (lbl, terminator) -> List.concat_map (compile_insn ctxt) insns @ (compile_terminator lbl ctxt terminator)
+    | (lbl, terminator) -> List.concat_map (compile_insn ctxt) insns @ (compile_terminator fn ctxt terminator)
 
 let compile_lbl_block fn lbl ctxt blk : elem =
   Asm.text (mk_lbl fn lbl) (compile_block fn ctxt blk)
@@ -492,8 +494,8 @@ let rec unifier (l : (lbl * block) list) : (uid * insn) list =
   | (_, {insns; _})::xs -> insns @ (unifier xs)
 
 let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout =
-  let uids_all = args @ (List.map fst block.insns) @ (List.map fst lbled_blocks) in
-  (* reg_layout args 0 @ *) (block_layout (uids_all) 0L)
+  let uids_all = (List.map fst block.insns) @ (List.map fst lbled_blocks) in
+  reg_layout args 0 @ (block_layout (uids_all) 0L)
 
 (* The code for the entry-point of a function must do several things:
 
@@ -522,9 +524,7 @@ let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg
     raise Exit; *)
     let params_length = (Int64.mul 8L (Int64.of_int (List.length tdecls))) in
     let ctxt = { tdecls = tdecls; layout = params_layout } in
-    let term_name = fst entry.term in
-    let term = snd entry.term in
-    let entry_ins = (compile_block name ctxt entry) @ (compile_terminator term_name ctxt term) in
+    let entry_ins = (compile_block name ctxt entry) in
     let blocks_asm = List.map (fun (lbl, blk) -> compile_lbl_block name lbl ctxt blk) blocks in
     let first_list : ins list = [
       (Pushq, [Reg Rbp]);

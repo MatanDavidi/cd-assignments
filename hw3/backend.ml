@@ -403,7 +403,10 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
   let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in 
   match t with
   | Ret (Void, _) -> 
-    [(Addq, [Imm (Lit amount); Reg Rsp]);(Popq, [Reg Rbp]);(Retq, [])]
+    [(Addq, [Imm (Lit amount); Reg Rsp]);
+    (Movq, [Reg Rbp; Reg Rsp]);
+    (Popq, [Reg Rbp]);
+    (Retq, [])]
   | Br x -> 
     let mgld_lbl = mk_lbl fn x in
     [(Jmp, [Imm (Lbl mgld_lbl)])]
@@ -414,13 +417,17 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
     [
       (Movq, [lookup ctxt.layout x; Reg Rax]);
       (Addq, [Imm (Lit amount); Reg Rsp]);
-      (Popq, [Reg Rbp]);(Retq, [])
+      (Movq, [Reg Rbp; Reg Rsp]);
+      (Popq, [Reg Rbp]);
+      (Retq, [])
     ]
   | Ret (_, Some (Const x)) -> 
     [
       (Movq, [Imm (Lit x); Reg Rax]);
       (Addq, [Imm (Lit amount); Reg Rsp]);
-      (Popq, [Reg Rbp]);(Retq, [])
+      (Movq, [Reg Rbp; Reg Rsp]);
+      (Popq, [Reg Rbp]);
+      (Retq, [])
     ]
   | Cbr ((Id x), y, z) | Cbr ((Gid x), y, z) -> 
     [
@@ -543,6 +550,7 @@ let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg
     in
     let snd_list = [
       (Addq, [Imm (Lit params_length); Reg Rsp]);
+      (Movq, [Reg Rsp; Reg Rbp]);
       (Popq, [Reg Rbp]);
       (Retq, [])
     ] 

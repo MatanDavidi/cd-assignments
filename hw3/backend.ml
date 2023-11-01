@@ -189,7 +189,7 @@ match t with
       in (4), but relative to the type f the sub-element picked out
       by the path so far
 *)
-let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list =
+let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list = 
   match path with
   | [] -> []
   | x::xs ->

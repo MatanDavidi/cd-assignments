@@ -237,15 +237,10 @@ let compile_gep (ctxt:ctxt) (op : Ll.ty * Ll.operand) (path: Ll.operand list) : 
   match op with
   |(Ptr t, Const x) -> [(Leaq, [Imm (Lit x); Reg R10])] @ helper_gep ctxt t path
   |(Ptr t, Gid x) ->
-    (* let mgld_lbl = Platform.mangle x in
-    let place = (print_endline ("looking up GID " ^ mgld_lbl)); lookup ctxt.layout mgld_lbl in
-    (print_endline ("I looked up GID " ^ mgld_lbl)); [(Leaq, [place; Reg R10])] @ helper_gep ctxt t path *)
-    let place = (print_endline ("looking up GID " ^ x)); compile_operand_full ctxt (Reg R10) (Gid x) in
-    (print_endline ("I looked up GID " ^ x)); place @ helper_gep ctxt t path
+    let place = compile_operand_full ctxt (Reg R10) (Gid x) in
+    place @ helper_gep ctxt t path
   | (Ptr t, Id x) ->
-    (* let place = (print_endline ("looking up ID " ^ x)); lookup ctxt.layout x in
-    (print_endline ("I looked up ID " ^ x)); [(Leaq, [place; Reg R10])] @ helper_gep ctxt t path *)
-    let place = (print_endline ("looking up ID " ^ x));compile_operand_full ctxt (Reg R10) (Id x) in
+    let place = compile_operand_full ctxt (Reg R10) (Id x) in
     place @ helper_gep ctxt t path
   | _ -> []
 
@@ -427,7 +422,6 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
   let amount = Int64.mul (Int64.of_int (List.length ctxt.tdecls)) 8L in 
   match t with
   | Ret (Void, _) -> 
-    print_endline "Returnami stocazzo";
     [(Addq, [Imm (Lit amount); Reg Rsp]);
     (Movq, [Reg Rbp; Reg Rsp]);
     (Popq, [Reg Rbp]);
@@ -435,11 +429,7 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
   | Br x -> 
     let mgld_lbl = mk_lbl fn x in
     [(Jmp, [Imm (Lbl mgld_lbl)])]
-    (* List.iter (
-      fun (a, b) -> Printf.printf "%s\n" (string_of_operand b)
-    ) ctxt.layout; [(Jmp, [lookup ctxt.layout x])] *)
   | Ret (_, Some (Id x)) | Ret (_, Some (Gid x))-> 
-    print_endline "Returnami st'altro cazzo";
     [
       (Movq, [lookup ctxt.layout x; Reg Rax]);
       (Addq, [Imm (Lit amount); Reg Rsp]);
@@ -448,7 +438,6 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
       (Retq, [])
     ]
   | Ret (_, Some (Const x)) -> 
-    print_endline "Returnami il terzo cazzo";
     [
       (Movq, [Imm (Lit x); Reg Rax]);
       (Addq, [Imm (Lit amount); Reg Rsp]);
@@ -457,9 +446,6 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
       (Retq, [])
     ]
   | Cbr ((Id x), y, z) | Cbr ((Gid x), y, z) -> 
-    print_endline "Returnami stocazzo condizionalmente";
-    print_endline ("Sto cercando x: " ^ x);
-    List.iter (fun (u, o) -> Printf.printf "%s: %s\n" u (string_of_operand o)) ctxt.layout;
     [
       (Cmpq, [Imm(Lit 1L); lookup ctxt.layout (Platform.mangle x)]);
       (J Eq,[Imm (Lbl (mk_lbl fn y))]); 
@@ -476,11 +462,10 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
    [blk]  - LLVM IR code for the block
 *)
 let compile_block (fn:string) (ctxt:ctxt) (blk:Ll.block) : ins list =
-  print_endline "Qua sicuro";
   match blk with
   | { insns : (lbl * insn) list; term : lbl * terminator; } ->
     match term with
-    | (_, terminator) -> print_endline "Potarello"; (List.concat_map (compile_insn ctxt) insns) @ (print_endline "cane papera"; compile_terminator fn ctxt terminator)
+    | (_, terminator) -> (List.concat_map (compile_insn ctxt) insns) @ (compile_terminator fn ctxt terminator)
 
 let compile_lbl_block fn lbl ctxt blk : elem =
   Asm.text (mk_lbl fn lbl) (compile_block fn ctxt blk)
@@ -562,24 +547,14 @@ let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout =
 (* `f_param` is a list of unique identifiers for the function parameters *)
 (* `f_cfg` is a control flow graph that represents the body of the function *)
 let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg }:fdecl) : prog =
-  print_endline "Hello my baby fdecl";
   match f_cfg with
   | (entry, blocks) ->
     let uids_all = (List.map fst (fst f_cfg).insns) @ (List.map fst (snd f_cfg)) @ (List.concat_map (fun bl -> List.map fst bl.insns) (List.map snd (snd f_cfg))) in
-    print_endline "Got uids";
     let params_layout = (stack_layout f_param f_cfg) in
-    print_endline "Got layout";
-    (* List.iter (fun (a, b) -> (Printf.printf "%s: %s\n" a (string_of_operand b))) params_layout; *)
     let params_length = Int64.mul 8L (Int64.of_int (List.length uids_all)) in
-    print_endline "Got params length";
-    (* Printf.printf "Params length: %d \n" (Int64.to_int params_length);
-    raise Exit; *)
     let ctxt = { tdecls = tdecls; layout = params_layout } in
-    print_endline "Got ctxt";
     let entry_ins = (compile_block name ctxt entry) in
-    print_endline "Got entry block instructions";
-    let blocks_asm = List.map (fun (lbl, blk) -> (print_endline ("I'm inside ... " ^ lbl)); compile_lbl_block name lbl ctxt blk) blocks in
-    print_endline "Got all blocks instructions";
+    let blocks_asm = List.map (fun (lbl, blk) -> compile_lbl_block name lbl ctxt blk) blocks in
     let first_list : ins list = [
       (Pushq, [Reg Rbp]);
       (Movq, [Reg Rsp; Reg Rbp]);
@@ -622,5 +597,4 @@ let compile_prog {tdecls; gdecls; fdecls} : X86.prog =
   let g = fun (lbl, gdecl) -> Asm.data (Platform.mangle lbl) (compile_gdecl gdecl) in
   let f = fun (name, fdecl) -> compile_fdecl tdecls name fdecl in
   let prog = (List.map g gdecls) @ (List.map f fdecls |> List.flatten) in
-  (* print_endline (string_of_prog prog); *)
   prog

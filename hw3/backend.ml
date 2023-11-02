@@ -327,7 +327,7 @@ let compile_store (ctxt:ctxt) (op1:Ll.operand) (op2:Ll.operand) (layout:layout) 
 let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.operand) (ctxt:ctxt) : X86.ins list =
   let temp_reg1 = Reg R10 in
   let temp_reg2 = Reg R11 in
-  let temp_reg3 = Reg R12 in
+  let temp_reg3 = Reg R08 in
   let x86_op1 = compile_operand_full ctxt temp_reg1 op1 in
   let x86_op2 = compile_operand_full ctxt temp_reg2 op2 in
 

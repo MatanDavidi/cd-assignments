@@ -324,19 +324,21 @@ let compile_store (ctxt:ctxt) (op1:Ll.operand) (op2:Ll.operand) (layout:layout) 
     end
   end
 
-let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.operand) (layout:layout) : X86.ins list =
-  let x86_op1 = resolve_op op1 layout in
-  let x86_op2 = resolve_op op2 layout in
-  let temp_reg = Reg R10 in
-  let op1_to_temp = (Movq, [x86_op1; temp_reg]) in
-  let comp = (Cmpq, [x86_op2; temp_reg]) in
+let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.operand) (ctxt:ctxt) : X86.ins list =
+  let temp_reg1 = Reg R10 in
+  let temp_reg2 = Reg R11 in
+  let temp_reg3 = Reg R12 in
+  let x86_op1 = compile_operand_full ctxt temp_reg1 op1 in
+  let x86_op2 = compile_operand_full ctxt temp_reg2 op2 in
+
+  let comp = (Cmpq, [temp_reg2; temp_reg1]) in
   match cond with
-  | Eq -> [op1_to_temp; comp; (Set Eq, [dest])]
-  | Ne -> [op1_to_temp; comp; (Set Neq, [dest])]
-  | Slt -> [op1_to_temp; comp; (Set Lt, [dest])]
-  | Sle -> [op1_to_temp; comp; (Set Le, [dest])]
-  | Sgt -> [op1_to_temp; comp; (Set Gt, [dest])]
-  | Sge -> [op1_to_temp; comp; (Set Ge, [dest])]
+  | Eq ->  x86_op1 @ x86_op2 @ [comp; (Set Eq, [temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Ne ->  x86_op1 @ x86_op2 @ [comp; (Set Neq,[temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Slt -> x86_op1 @ x86_op2 @ [comp; (Set Lt, [temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Sle -> x86_op1 @ x86_op2 @ [comp; (Set Le, [temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Sgt -> x86_op1 @ x86_op2 @ [comp; (Set Gt, [temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Sge -> x86_op1 @ x86_op2 @ [comp; (Set Ge, [temp_reg3]); (Movq, [temp_reg3; dest])]
 
   let call_first_reg_helper (n : int) (op:X86.operand) : ins =
     match n with
@@ -412,7 +414,7 @@ let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
     | Alloca ty -> compile_alloca tdecls ty dest
     | Load (_, op) -> compile_load ctxt op dest layout
     | Store (_, op1, op2) -> compile_store ctxt op1 op2 layout
-    | Icmp (cond, _, op1, op2) -> compile_icmp cond op1 op2 dest layout
+    | Icmp (cond, _, op1, op2) -> compile_icmp cond op1 op2 dest ctxt
     | Call (_, op, operands) -> compile_call op operands ctxt @ [(Movq, [Reg Rax; dest])]
     | Bitcast (_, op, _) -> compile_bitcast op dest ctxt
     | Gep (ty, op, operands) -> compile_gep ctxt (ty, op) operands @ [(Movq, [Reg R10; dest])]

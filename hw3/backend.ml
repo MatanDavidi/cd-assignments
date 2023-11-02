@@ -362,6 +362,13 @@ let compile_call (fn:Ll.operand) (operands:(ty * Ll.operand) list) (ctxt:ctxt) :
   [
     (Callq, [Imm (Lbl (Platform.mangle lbl))])
   ]
+
+let compile_bitcast (op:Ll.operand) (dest:X86.operand) (ctxt:ctxt) : X86.ins list =
+  let temp_reg = Reg R10 in
+  let x86_op = compile_operand_full ctxt temp_reg op in
+  x86_op @
+  [(Movq, [temp_reg; dest])]
+
 (* The result of compiling a single LLVM instruction might be many x86
    instructions.  We have not determined the structure of this code
    for you. Some of the instructions require only a couple of assembly
@@ -394,7 +401,7 @@ let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
     | Store (_, op1, op2) -> compile_store ctxt op1 op2 layout
     | Icmp (cond, _, op1, op2) -> compile_icmp cond op1 op2 dest layout
     | Call (_, op, operands) -> compile_call op operands ctxt @ [(Movq, [Reg Rax; dest])]
-    | Bitcast (ty1, op, ty2) -> []
+    | Bitcast (_, op, _) -> compile_bitcast op dest ctxt
     | Gep (ty, op, operands) -> compile_gep ctxt (ty, op) operands @ [(Movq, [Reg R10; dest])]
     end
 

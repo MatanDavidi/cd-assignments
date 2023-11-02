@@ -398,7 +398,7 @@ let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
     | Load (_, op) -> compile_load ctxt op dest layout
     | Store (_, op1, op2) -> compile_store ctxt op1 op2 layout
     | Icmp (cond, _, op1, op2) -> compile_icmp cond op1 op2 dest layout
-    | Call (_, op, operands) -> compile_call op operands ctxt
+    | Call (_, op, operands) -> compile_call op operands ctxt @ [(Movq, [Reg Rax; dest])]
     | Bitcast (ty1, op, ty2) -> []
     | Gep (ty, op, operands) -> compile_gep ctxt (ty, op) operands @ [(Movq, [Reg R10; dest])]
     end
@@ -540,7 +540,7 @@ let rec unifier (l : (lbl * block) list) : (uid * insn) list =
 
 let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout =
   let uids_all = (List.map fst block.insns) @ (List.map fst lbled_blocks) @ (List.concat_map (fun bl -> List.map fst bl.insns) (List.map snd lbled_blocks)) in
-  reg_layout args 0 @ (block_layout (uids_all) 0L)
+  reg_layout args 0 @ (block_layout (uids_all) (-8L))
 
 (* The code for the entry-point of a function must do several things:
 
@@ -570,7 +570,7 @@ let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg
     let params_layout = (stack_layout f_param f_cfg) in
     print_endline "Got layout";
     (* List.iter (fun (a, b) -> (Printf.printf "%s: %s\n" a (string_of_operand b))) params_layout; *)
-    let params_length = Int64.mul 8L (Int64.of_int ((List.length uids_all) - 1)) in
+    let params_length = Int64.mul 8L (Int64.of_int (List.length uids_all)) in
     print_endline "Got params length";
     (* Printf.printf "Params length: %d \n" (Int64.to_int params_length);
     raise Exit; *)

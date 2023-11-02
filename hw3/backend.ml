@@ -348,20 +348,33 @@ let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.opera
     | 5 -> (Movq, [op; Reg R09])
     | _ -> (Movq, [op; Reg R10]) (* (Pushq, [Ind3 ( Lit ( Int64.mul 8L (Int64.sub (Int64.of_int n) 5L ) ) , Rbp )]) *)
 
+let rec inv_take (n:int) (l: 'a list) : 'a list =
+  match n, l with
+  | 0, _ -> l
+  | _, [] -> []
+  | n, (_::ls) -> inv_take (n - 1) ls
+
+let mem_args_helper : ('a list -> 'a list) = inv_take 6
+
 let compile_call (fn:Ll.operand) (operands:(ty * Ll.operand) list) (ctxt:ctxt) : ins list =
   match fn with
   | Null | Const _ -> []
   | Gid lbl | Id lbl ->
-  let j_setup = 
+  let push_reg_args = 
     List.concat ( List.mapi (
       fun i ((_, op):(ty * Ll.operand)) -> 
         (compile_operand_full ctxt (Reg R10) op) @ [(call_first_reg_helper i (Reg R10))]
     ) operands)
   in
-  j_setup @
+  let mem_args = List.rev (mem_args_helper operands) in
+  let push_mem_args = List.concat_map (fun (_, op) -> compile_operand_full ctxt (Reg R10) op @ [(Pushq, [Reg R10])]) mem_args in
+  let pop_mem_args = List.concat_map (fun (_, op) -> compile_operand_full ctxt (Reg R10) op @ [(Popq, [Reg R10])]) mem_args in
+  push_reg_args @
+  push_mem_args @
   [
     (Callq, [Imm (Lbl (Platform.mangle lbl))])
-  ]
+  ] @ 
+  pop_mem_args
 
 let compile_bitcast (op:Ll.operand) (dest:X86.operand) (ctxt:ctxt) : X86.ins list =
   let temp_reg = Reg R10 in
@@ -497,7 +510,7 @@ match n with
 | 3 -> Reg Rcx
 | 4 -> Reg R08
 | 5 -> Reg R09
-| _ -> Ind3 ( Lit ( Int64.mul 8L (Int64.sub (Int64.of_int n) 5L ) ) , Rbp )
+| _ -> Ind3 ( Lit ( Int64.mul 8L (Int64.sub (Int64.of_int (n + 1)) 5L ) ) , Rbp )
 
 
 (* We suggest that you create a helper function that computes the

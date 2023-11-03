@@ -193,39 +193,53 @@ let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list =
   match path with
   | [] -> []
   | x::xs ->
-    begin match t with
+    let actual_type = 
+      match t with
+      | Namedt ty -> lookup ctxt.tdecls ty
+      | _ -> t
+    in
+    begin match actual_type with
     | Struct y ->
       let size =
-      begin match x with
-      | Const z -> z
-      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in
+        begin match x with
+        | Const z -> z
+        | _ -> 0L
+        end 
+      in 
+      let amount = Int64.of_int (size_ty ctxt.tdecls t) in
       [
         (Movq, [Imm (Lit size); Reg R09]);
         (Imulq, [Imm (Lit amount); Reg R09]);
         (Addq, [Reg R09; Reg R10])
         ] @ helper_gep ctxt (List.nth y (Int64.to_int size)) xs
     | Array (_, y) ->
-      let size =
-      begin match x with
-      | Const z -> Imm (Lit z)
-      | Gid z ->
-        let mgld_lbl = Platform.mangle z in
-        lookup ctxt.layout mgld_lbl
-      | Id z -> lookup ctxt.layout z
-      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in
+      let size = compile_operand_full ctxt (Reg R09) x
+        (* begin match x with
+        | Const z -> Imm (Lit z)
+        | Gid z ->
+          let mgld_lbl = Platform.mangle z in
+          lookup ctxt.layout mgld_lbl
+        | Id z -> lookup ctxt.layout z
+        | _ -> failwith "Invalid argument passed to getelementptr instruction"
+        end  *)
+      in 
+      let amount = Int64.of_int (size_ty ctxt.tdecls t) in
+      size @
       [
-        (Movq, [size; Reg R09]);
         (Imulq, [Imm (Lit amount); Reg R09]);
         (Addq, [Reg R09; Reg R10])
         ] @ helper_gep ctxt y xs
     | _ -> let size =
-      begin match x with
-      | Const z -> Imm (Lit z)
-      | Gid z ->
-        let mgld_lbl = Platform.mangle z in
-        lookup ctxt.layout mgld_lbl
-      | Id z -> lookup ctxt.layout z
-      end in let amount = Int64.of_int (size_ty ctxt.tdecls t) in
+      begin 
+        match x with
+        | Const z -> Imm (Lit z)
+        | Gid z ->
+          let mgld_lbl = Platform.mangle z in
+          lookup ctxt.layout mgld_lbl
+        | Id z -> lookup ctxt.layout z
+        | _ -> failwith "Invalid argument passed to getelementptr instruction"
+        end 
+      in let amount = Int64.of_int (size_ty ctxt.tdecls t) in
       [
         (Movq, [size; Reg R09]);
         (Imulq, [Imm (Lit amount); Reg R09]);
@@ -358,7 +372,7 @@ let rec inv_take (n:int) (l: 'a list) : 'a list =
 
 let mem_args_helper : ('a list -> 'a list) = inv_take 6
 
-let compile_call (fn:Ll.operand) (operands:(ty * Ll.operand) list) (ctxt:ctxt) : ins list =
+let compile_call (fn:Ll.operand) (operands:(ty * Ll.operand) list) (dest:X86.operand) (ctxt:ctxt) : ins list =
   match fn with
   | Null | Const _ -> []
   | Gid lbl | Id lbl ->
@@ -376,7 +390,8 @@ let compile_call (fn:Ll.operand) (operands:(ty * Ll.operand) list) (ctxt:ctxt) :
   [
     (Callq, [Imm (Lbl (Platform.mangle lbl))])
   ] @ 
-  pop_mem_args
+  pop_mem_args @
+  [(Movq, [Reg Rax; dest])]
 
 let compile_bitcast (op:Ll.operand) (dest:X86.operand) (ctxt:ctxt) : X86.ins list =
   let temp_reg = Reg R10 in
@@ -415,9 +430,9 @@ let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
     | Load (_, op) -> compile_load ctxt op dest layout
     | Store (_, op1, op2) -> compile_store ctxt op1 op2 layout
     | Icmp (cond, _, op1, op2) -> compile_icmp cond op1 op2 dest ctxt
-    | Call (_, op, operands) -> compile_call op operands ctxt @ [(Movq, [Reg Rax; dest])]
+    | Call (_, op, operands) -> compile_call op operands dest ctxt
     | Bitcast (_, op, _) -> compile_bitcast op dest ctxt
-    | Gep (ty, op, operands) -> compile_gep ctxt (ty, op) operands @ [(Movq, [Reg R10; dest])]
+    | Gep (ty, op, operands) -> (compile_gep ctxt (ty, op) operands) @ [(Movq, [Reg R10; dest])]
     end
 
 

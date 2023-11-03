@@ -161,26 +161,6 @@ match t with
 | Array (n, t') -> n * (size_ty tdecls t')
 | Namedt lbl -> size_ty tdecls (lookup tdecls lbl)
 
-let string_of_llop (op: Ll.operand) : string = 
-  match op with
-  | Null -> "Null"
-  | Const q -> "Const " ^ (Int64.to_string q)
-  | Gid lbl -> "Gid " ^ lbl
-  | Id lbl -> "Id " ^ lbl
-
-let rec string_of_llty (op: Ll.ty) : string = 
-  match op with
-  | Void -> "Void"
-  | I1 -> "i1"
-  | I8 -> "i8"
-  | I64 ->"i64"
-  | Ptr t -> "Ptr of " ^ (string_of_llty t)
-  | Struct _ -> "Struct"
-  | Array (n, t) -> "Array of " ^ (string_of_llty t)
-  | Fun _ -> "Function"
-  | Namedt tid -> "Nametid " ^ tid
-
-
 (* Generates code that computes a pointer value.
 
    1. op must be of pointer type: t*
@@ -411,7 +391,7 @@ let compile_call (fn:Ll.operand) (operands:(ty * Ll.operand) list) (dest:X86.ope
   let pop_mem_args = List.concat_map (fun (_, op) -> compile_operand_full ctxt (Reg R10) op @ [(Popq, [Reg R10])]) mem_args in
   push_reg_args @
   push_mem_args @
-  [
+  [ 
     (Callq, [Imm (Lbl (Platform.mangle lbl))])
   ] @ 
   pop_mem_args @

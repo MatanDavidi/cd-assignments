@@ -161,7 +161,24 @@ match t with
 | Array (n, t') -> n * (size_ty tdecls t')
 | Namedt lbl -> size_ty tdecls (lookup tdecls lbl)
 
+let string_of_llop (op: Ll.operand) : string = 
+  match op with
+  | Null -> "Null"
+  | Const q -> "Const " ^ (Int64.to_string q)
+  | Gid lbl -> "Gid " ^ lbl
+  | Id lbl -> "Id " ^ lbl
 
+let rec string_of_llty (op: Ll.ty) : string = 
+  match op with
+  | Void -> "Void"
+  | I1 -> "i1"
+  | I8 -> "i8"
+  | I64 ->"i64"
+  | Ptr t -> "Ptr of " ^ (string_of_llty t)
+  | Struct _ -> "Struct"
+  | Array (n, t) -> "Array of " ^ (string_of_llty t)
+  | Fun _ -> "Function"
+  | Namedt tid -> "Nametid " ^ tid
 
 
 (* Generates code that computes a pointer value.
@@ -189,10 +206,16 @@ match t with
       in (4), but relative to the type f the sub-element picked out
       by the path so far
 *)
+let rec struct_index (ctxt:ctxt) (t: Ll.ty list) (counter: int64) : int64 = if counter = 0L then 0L else
+  match t with
+    |[] -> 0L
+    |(x::xs) -> Int64.add (Int64.of_int (size_ty ctxt.tdecls x)) (struct_index ctxt xs (Int64.sub counter 1L))
+    |_ -> failwith "invalid struct_index"
+
 let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list = 
   match path with
   | [] -> []
-  | x::xs ->
+  | x::xs -> 
     let actual_type = 
       match t with
       | Namedt ty -> lookup ctxt.tdecls ty
@@ -200,19 +223,18 @@ let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list =
     in
     begin match actual_type with
     | Struct y ->
-      let size =
+      let size = 
         begin match x with
         | Const z -> z
         | _ -> 0L
         end 
       in 
-      let amount = Int64.of_int (size_ty ctxt.tdecls t) in
+      let amount = struct_index ctxt y size in
       [
-        (Movq, [Imm (Lit size); Reg R09]);
-        (Imulq, [Imm (Lit amount); Reg R09]);
-        (Addq, [Reg R09; Reg R10])
+        (Movq, [Imm (Lit amount); Reg R09]);
+        (Addq, [Reg R09; Reg R11])
         ] @ helper_gep ctxt (List.nth y (Int64.to_int size)) xs
-    | Array (_, y) ->
+    | Array (_, y) -> 
       let size = compile_operand_full ctxt (Reg R09) x
         (* begin match x with
         | Const z -> Imm (Lit z)
@@ -223,11 +245,11 @@ let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list =
         | _ -> failwith "Invalid argument passed to getelementptr instruction"
         end  *)
       in 
-      let amount = Int64.of_int (size_ty ctxt.tdecls t) in
+      let amount = Int64.of_int (size_ty ctxt.tdecls y) in
       size @
       [
         (Imulq, [Imm (Lit amount); Reg R09]);
-        (Addq, [Reg R09; Reg R10])
+        (Addq, [Reg R09; Reg R11])
         ] @ helper_gep ctxt y xs
     | _ -> let size =
       begin 
@@ -243,20 +265,22 @@ let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list =
       [
         (Movq, [size; Reg R09]);
         (Imulq, [Imm (Lit amount); Reg R09]);
-        (Addq, [Reg R09; Reg R10])
+        (Addq, [Reg R09; Reg R11])
         ]
     end
 
-let compile_gep (ctxt:ctxt) (op : Ll.ty * Ll.operand) (path: Ll.operand list) : ins list =
+let compile_gep (ctxt:ctxt) (op : Ll.ty * Ll.operand) ((x::xs): Ll.operand list) : ins list =
   match op with
-  |(Ptr t, Const x) -> [(Leaq, [Imm (Lit x); Reg R10])] @ helper_gep ctxt t path
-  |(Ptr t, Gid x) ->
-    let place = compile_operand_full ctxt (Reg R10) (Gid x) in
-    place @ helper_gep ctxt t path
-  | (Ptr t, Id x) ->
-    let place = compile_operand_full ctxt (Reg R10) (Id x) in
-    place @ helper_gep ctxt t path
-  | _ -> []
+    | (Ptr t, _) -> let index = (compile_operand_full ctxt (Reg R09) x) @ [(Imulq, [Imm (Lit (Int64.of_int (size_ty ctxt.tdecls t))); Reg R09])];
+      in match op with
+      |(Ptr t, Const x) -> index @ [(Leaq, [Imm (Lit x); Reg R11]); (Addq, [Reg R09; Reg R11])] @ helper_gep ctxt t xs
+      |(Ptr t, Gid x) ->
+        let place = compile_operand_full ctxt (Reg R11) (Gid x) in
+        index @ place @ [(Addq, [Reg R09; Reg R11])] @ helper_gep ctxt t xs
+      | (Ptr t, Id x) ->
+        let place = compile_operand_full ctxt (Reg R11) (Id x) in
+        index @ place @ [(Addq, [Reg R09; Reg R11])] @ helper_gep ctxt t xs
+      | _ -> []
 
 
 
@@ -432,7 +456,7 @@ let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
     | Icmp (cond, _, op1, op2) -> compile_icmp cond op1 op2 dest ctxt
     | Call (_, op, operands) -> compile_call op operands dest ctxt
     | Bitcast (_, op, _) -> compile_bitcast op dest ctxt
-    | Gep (ty, op, operands) -> (compile_gep ctxt (ty, op) operands) @ [(Movq, [Reg R10; dest])]
+    | Gep (ty, op, operands) -> (compile_gep ctxt (ty, op) operands) @ [(Movq, [Reg R11; dest])]
     end
 
 
@@ -565,7 +589,7 @@ let stack_layout (args : uid list) ((block, lbled_blocks):cfg) : layout =
   reg_layout args 0 @ (block_layout (uids_all) (-8L))
 
 (* The code for the entry-point of a function must do several things:
-
+/compi
    - since our simple compiler maps local %uids to stack slots,
      compiling the control-flow-graph body of an fdecl requires us to
      compute the layout (see the discussion of locals and layout)

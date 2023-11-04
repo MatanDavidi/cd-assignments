@@ -389,13 +389,17 @@ let compile_call (fn:Ll.operand) (operands:(ty * Ll.operand) list) (dest:X86.ope
   let mem_args = List.rev (mem_args_helper operands) in
   let push_mem_args = List.concat_map (fun (_, op) -> compile_operand_full ctxt (Reg R10) op @ [(Pushq, [Reg R10])]) mem_args in
   let pop_mem_args = List.concat_map (fun (_, op) -> compile_operand_full ctxt (Reg R10) op @ [(Popq, [Reg R10])]) mem_args in
+  let push_caller_saved = [(Pushq, [Reg Rax]);(Pushq, [Reg Rbx]);(Pushq, [Reg Rcx]);(Pushq, [Reg Rsi]);(Pushq, [Reg Rdi]);(Pushq, [Reg R08]);(Pushq, [Reg R09]);(Pushq, [Reg R10]);(Pushq, [Reg R11]);(Pushq, [Reg R12]);(Pushq, [Reg R13]);(Pushq, [Reg R14]);(Pushq, [Reg R15])] in
+  let pop_caller_saved = [(Popq, [Reg R15]);(Popq, [Reg R14]);(Popq, [Reg R13]);(Popq, [Reg R12]);(Popq, [Reg R11]);(Popq, [Reg R10]);(Popq, [Reg R09]);(Popq, [Reg R08]);(Popq, [Reg Rdi]);(Popq, [Reg Rsi]);(Popq, [Reg Rcx]);(Popq, [Reg Rbx]);(Popq, [Reg Rax])] in 
+  push_caller_saved @
   push_reg_args @
   push_mem_args @
   [ 
     (Callq, [Imm (Lbl (Platform.mangle lbl))])
   ] @ 
   pop_mem_args @
-  [(Movq, [Reg Rax; dest])]
+
+  [(Movq, [Reg Rax; dest])] @ pop_caller_saved
 
 let compile_bitcast (op:Ll.operand) (dest:X86.operand) (ctxt:ctxt) : X86.ins list =
   let temp_reg = Reg R10 in

@@ -285,21 +285,21 @@ let compile_bop (ctxt:ctxt) (bop:bop) (op1:Ll.operand) (op2:Ll.operand) (dest:X8
   | Sub -> compiled_op1 @ [(Subq, [x86op2; temp_reg]); temp_to_dest_transf]
   | Mul -> compiled_op1 @ [(Imulq, [x86op2; temp_reg]); temp_to_dest_transf]
   | Shl ->
-    let sh_reg_1 = (Reg R08) in 
+    let sh_reg_1 = (Reg R10) in 
     let sh_reg_2 = (Reg Rcx) in
     let sh_op1 = compile_operand_full ctxt sh_reg_1 op1 in
     let sh_op2 = compile_operand_full ctxt sh_reg_2 op2 in
     let sh_dest_transf = (Movq, [sh_reg_1; dest]) in
      sh_op1 @ sh_op2 @ [(Shlq, [sh_reg_2; sh_reg_1]); sh_dest_transf]
   | Lshr ->
-    let sh_reg_1 = (Reg R08) in 
+    let sh_reg_1 = (Reg R10) in 
     let sh_reg_2 = (Reg Rcx) in
     let sh_op1 = compile_operand_full ctxt sh_reg_1 op1 in
     let sh_op2 = compile_operand_full ctxt sh_reg_2 op2 in
     let sh_dest_transf = (Movq, [sh_reg_1; dest]) in
     sh_op1 @ sh_op2 @ [(Shrq, [sh_reg_2; sh_reg_1]); sh_dest_transf]
   | Ashr ->
-    let sh_reg_1 = (Reg R08) in 
+    let sh_reg_1 = (Reg R10) in 
     let sh_reg_2 = (Reg Rcx) in
     let sh_op1 = compile_operand_full ctxt sh_reg_1 op1 in
     let sh_op2 = compile_operand_full ctxt sh_reg_2 op2 in
@@ -363,7 +363,7 @@ let compile_store (ctxt:ctxt) (op1:Ll.operand) (op2:Ll.operand) (layout:layout) 
 let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.operand) (ctxt:ctxt) : X86.ins list =
   let temp_reg1 = Reg R10 in
   let temp_reg2 = Reg R11 in
-  let temp_reg3 = Reg R08 in
+  let temp_reg3 = Reg R10 in
   let x86_op1 = compile_operand_full ctxt temp_reg1 op1 in
   let x86_op2 = compile_operand_full ctxt temp_reg2 op2 in
 
@@ -398,6 +398,7 @@ let compile_call (fn:Ll.operand) (operands:(ty * Ll.operand) list) (dest:X86.ope
   match fn with
   | Null | Const _ -> []
   | Gid lbl | Id lbl ->
+  print_endline ("label to call: " ^ lbl); 
   let push_reg_args = 
     List.concat ( List.mapi (
       fun i ((_, op):(ty * Ll.operand)) -> 
@@ -507,6 +508,15 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
       (Movq, [Reg Rbp; Reg Rsp]);
       (Popq, [Reg Rbp]);
       (Retq, [])
+    ]
+  | Cbr ((Const n), y, z) -> 
+    if n = 1L then
+      [
+        (Jmp, [Imm (Lbl (mk_lbl fn y))])
+      ]
+    else
+    [
+      Jmp, [Imm (Lbl (mk_lbl fn z))]
     ]
   | Cbr ((Id x), y, z) | Cbr ((Gid x), y, z) -> 
     [

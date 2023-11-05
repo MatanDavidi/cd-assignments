@@ -369,12 +369,12 @@ let compile_icmp (cond:Ll.cnd) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.opera
 
   let comp = (Cmpq, [temp_reg2; temp_reg1]) in
   match cond with
-  | Eq ->  x86_op1 @ x86_op2 @ [comp; (Set Eq, [temp_reg3]); (Movq, [temp_reg3; dest])]
-  | Ne ->  x86_op1 @ x86_op2 @ [comp; (Set Neq,[temp_reg3]); (Movq, [temp_reg3; dest])]
-  | Slt -> x86_op1 @ x86_op2 @ [comp; (Set Lt, [temp_reg3]); (Movq, [temp_reg3; dest])]
-  | Sle -> x86_op1 @ x86_op2 @ [comp; (Set Le, [temp_reg3]); (Movq, [temp_reg3; dest])]
-  | Sgt -> x86_op1 @ x86_op2 @ [comp; (Set Gt, [temp_reg3]); (Movq, [temp_reg3; dest])]
-  | Sge -> x86_op1 @ x86_op2 @ [comp; (Set Ge, [temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Eq ->  x86_op2 @ x86_op1 @ [comp; (Set Eq, [temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Ne ->  x86_op2 @ x86_op1 @ [comp; (Set Neq,[temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Slt -> x86_op2 @ x86_op1 @ [comp; (Set Lt, [temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Sle -> x86_op2 @ x86_op1 @ [comp; (Set Le, [temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Sgt -> x86_op2 @ x86_op1 @ [comp; (Set Gt, [temp_reg3]); (Movq, [temp_reg3; dest])]
+  | Sge -> x86_op2 @ x86_op1 @ [comp; (Set Ge, [temp_reg3]); (Movq, [temp_reg3; dest])]
 
   let call_first_reg_helper (n : int) (op:X86.operand) : ins =
     match n with
@@ -398,7 +398,6 @@ let compile_call (fn:Ll.operand) (operands:(ty * Ll.operand) list) (dest:X86.ope
   match fn with
   | Null | Const _ -> []
   | Gid lbl | Id lbl ->
-  print_endline ("label to call: " ^ lbl); 
   let push_reg_args = 
     List.concat ( List.mapi (
       fun i ((_, op):(ty * Ll.operand)) -> 

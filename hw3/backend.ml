@@ -284,9 +284,27 @@ let compile_bop (ctxt:ctxt) (bop:bop) (op1:Ll.operand) (op2:Ll.operand) (dest:X8
   | Add -> compiled_op1 @ [(Addq, [x86op2; temp_reg]); temp_to_dest_transf]
   | Sub -> compiled_op1 @ [(Subq, [x86op2; temp_reg]); temp_to_dest_transf]
   | Mul -> compiled_op1 @ [(Imulq, [x86op2; temp_reg]); temp_to_dest_transf]
-  | Shl -> compiled_op1 @ [(Shlq, [x86op2; temp_reg]); temp_to_dest_transf]
-  | Lshr -> compiled_op1 @ [(Shrq, [x86op2; temp_reg]); temp_to_dest_transf]
-  | Ashr -> compiled_op1 @ [(Sarq, [x86op2; temp_reg]); temp_to_dest_transf]
+  | Shl ->
+    let sh_reg_1 = (Reg R08) in 
+    let sh_reg_2 = (Reg Rcx) in
+    let sh_op1 = compile_operand_full ctxt sh_reg_1 op1 in
+    let sh_op2 = compile_operand_full ctxt sh_reg_2 op2 in
+    let sh_dest_transf = (Movq, [sh_reg_1; dest]) in
+     sh_op1 @ sh_op2 @ [(Shlq, [sh_reg_2; sh_reg_1]); sh_dest_transf]
+  | Lshr ->
+    let sh_reg_1 = (Reg R08) in 
+    let sh_reg_2 = (Reg Rcx) in
+    let sh_op1 = compile_operand_full ctxt sh_reg_1 op1 in
+    let sh_op2 = compile_operand_full ctxt sh_reg_2 op2 in
+    let sh_dest_transf = (Movq, [sh_reg_1; dest]) in
+    sh_op1 @ sh_op2 @ [(Shrq, [sh_reg_2; sh_reg_1]); sh_dest_transf]
+  | Ashr ->
+    let sh_reg_1 = (Reg R08) in 
+    let sh_reg_2 = (Reg Rcx) in
+    let sh_op1 = compile_operand_full ctxt sh_reg_1 op1 in
+    let sh_op2 = compile_operand_full ctxt sh_reg_2 op2 in
+    let sh_dest_transf = (Movq, [sh_reg_1; dest]) in
+    sh_op1 @ sh_op2 @ [(Sarq, [sh_reg_2; sh_reg_1]); sh_dest_transf]
   | And -> compiled_op1 @ [(Andq, [x86op2; temp_reg]); temp_to_dest_transf]
   | Or -> compiled_op1 @ [(Orq, [x86op2; temp_reg]); temp_to_dest_transf]
   | Xor -> compiled_op1 @ [(Xorq, [x86op2; temp_reg]); temp_to_dest_transf]
@@ -595,7 +613,10 @@ let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg
   match f_cfg with
   | (entry, blocks) ->
     let uids_all = (List.map fst (fst f_cfg).insns) @ (List.map fst (snd f_cfg)) @ (List.concat_map (fun bl -> List.map fst bl.insns) (List.map snd (snd f_cfg))) in
+    (* print_endline ((string_of_int (List.length uids_all)) ^ " labels: ");
+    List.iter (print_endline) uids_all; *)
     let params_layout = (stack_layout f_param f_cfg) in
+    (* List.iter (fun (uid, op) -> Printf.printf "%s: %s\n" uid (string_of_operand op)) params_layout; *)
     let params_length = Int64.mul 8L (Int64.of_int (List.length uids_all)) in
     let ctxt = { tdecls = tdecls; layout = params_layout } in
     let entry_ins = (compile_block name ctxt entry) in

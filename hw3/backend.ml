@@ -502,7 +502,7 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
     ]
   | Ret (_, Some (Gid x)) ->
     [
-      (Movq, [Ind1 (Lbl (Platform.mangle x)); Reg Rax]);
+      (Leaq, [Ind3 ((Lbl (Platform.mangle x)), Rip); Reg Rax]);
       (Addq, [Imm (Lit amount); Reg Rsp]);
       (Movq, [Reg Rbp; Reg Rsp]);
       (Popq, [Reg Rbp]);

@@ -59,7 +59,7 @@ type ctxt = { tdecls : (tid * ty) list
             }
 
 (* useful for looking up items in tdecls or layouts *)
-let lookup m x = List.assoc x m
+let lookup m x = Printf.printf "Looking up %s" x; List.assoc x m
 
 
 (* compiling operands  ------------------------------------------------------ *)
@@ -100,7 +100,7 @@ let compile_operand (ctxt:ctxt) (dest:X86.operand) : Ll.operand -> ins =
         | Gid lbl ->
           let mgld_lbl = Platform.mangle lbl in
           (Leaq, [Ind3 ((Lbl mgld_lbl), Rip); dest])
-        | Id lbl -> (Movq, [(lookup layout lbl); temp_reg])
+        | Id lbl -> print_endline ("Looking up op lbl " ^ lbl); (Movq, [(lookup layout lbl); temp_reg])
 
 let compile_operand_full (ctxt:ctxt) (dest:X86.operand) (src:Ll.operand) : ins list =
   let temp_reg = Reg R10 in
@@ -159,7 +159,7 @@ match t with
 | I1 | I64 | Ptr _ -> 8
 | Struct l -> List.fold_left (+) 0 (List.map (size_ty tdecls) l)
 | Array (n, t') -> n * (size_ty tdecls t')
-| Namedt lbl -> size_ty tdecls (lookup tdecls lbl)
+| Namedt lbl -> print_endline ("Looking up namedt lbl " ^ lbl);  size_ty tdecls (lookup tdecls lbl)
 
 (* Generates code that computes a pointer value.
 
@@ -198,7 +198,7 @@ let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list =
   | x::xs -> 
     let actual_type = 
       match t with
-      | Namedt ty -> lookup ctxt.tdecls ty
+      | Namedt ty -> print_endline ("Looking up op lbl " ^ ty); lookup ctxt.tdecls ty
       | _ -> t
     in
     begin match actual_type with
@@ -237,8 +237,9 @@ let rec helper_gep (ctxt:ctxt) (t:Ll.ty) (path: Ll.operand list) : ins list =
         | Const z -> Imm (Lit z)
         | Gid z ->
           let mgld_lbl = Platform.mangle z in
+          print_endline ("Looking up gep mgld_lbl " ^ mgld_lbl); 
           lookup ctxt.layout mgld_lbl
-        | Id z -> lookup ctxt.layout z
+        | Id z -> print_endline ("Looking up gep id " ^ z); lookup ctxt.layout z
         | _ -> failwith "Invalid argument passed to getelementptr instruction"
         end 
       in let amount = Int64.of_int (size_ty ctxt.tdecls t) in
@@ -272,8 +273,9 @@ let resolve_op (op:Ll.operand) (layout:layout) =
   | Const n -> Imm (Lit n)
   | Gid id ->
     let mgld_lbl = Platform.mangle id in
+    print_endline ("Looking up resolve_op mgld_lbl " ^ mgld_lbl); 
     lookup layout mgld_lbl
-  | Id id -> lookup layout id
+  | Id id -> print_endline ("Looking up resolve_op id " ^ id); lookup layout id
 
 let compile_bop (ctxt:ctxt) (bop:bop) (op1:Ll.operand) (op2:Ll.operand) (dest:X86.operand) (layout:layout) : X86.ins list =
   let temp_reg = (Reg R11) in
@@ -449,7 +451,7 @@ let compile_bitcast (op:Ll.operand) (dest:X86.operand) (ctxt:ctxt) : X86.ins lis
 let compile_insn (ctxt:ctxt) ((uid:uid), (i:Ll.insn)) : X86.ins list =
   match ctxt with
   | { tdecls : (lbl * ty) list; layout : layout; } ->
-    let dest = lookup layout uid in
+    let dest = print_endline ("Looking up op insn dest " ^ uid); lookup layout uid in
     begin match i with
     | Binop (bop, _, op1, op2) -> compile_bop ctxt bop op1 op2 dest layout
     | Alloca ty -> compile_alloca tdecls ty dest
@@ -492,9 +494,18 @@ let compile_terminator (fn:string) (ctxt:ctxt) (t:Ll.terminator) : ins list =
   | Br x -> 
     let mgld_lbl = mk_lbl fn x in
     [(Jmp, [Imm (Lbl mgld_lbl)])]
-  | Ret (_, Some (Id x)) | Ret (_, Some (Gid x))-> 
+  | Ret (_, Some (Id x)) -> 
+    print_endline ("Looking up term lbl " ^ x); 
     [
       (Movq, [lookup ctxt.layout x; Reg Rax]);
+      (Addq, [Imm (Lit amount); Reg Rsp]);
+      (Movq, [Reg Rbp; Reg Rsp]);
+      (Popq, [Reg Rbp]);
+      (Retq, [])
+    ]
+  | Ret (_, Some (Gid x)) ->
+    [
+      (Movq, [Ind1 (Lbl (Platform.mangle x)); Reg Rax]);
       (Addq, [Imm (Lit amount); Reg Rsp]);
       (Movq, [Reg Rbp; Reg Rsp]);
       (Popq, [Reg Rbp]);
@@ -622,14 +633,14 @@ let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg
   match f_cfg with
   | (entry, blocks) ->
     let uids_all = (List.map fst (fst f_cfg).insns) @ (List.map fst (snd f_cfg)) @ (List.concat_map (fun bl -> List.map fst bl.insns) (List.map snd (snd f_cfg))) in
-    (* print_endline ((string_of_int (List.length uids_all)) ^ " labels: ");
-    List.iter (print_endline) uids_all; *)
+    print_endline ((string_of_int (List.length uids_all)) ^ " labels: ");
+    List.iter (print_endline) uids_all;
     let params_layout = (stack_layout f_param f_cfg) in
-    (* List.iter (fun (uid, op) -> Printf.printf "%s: %s\n" uid (string_of_operand op)) params_layout; *)
+    List.iter (fun (uid, op) -> Printf.printf "%s: %s\n" uid (string_of_operand op)) params_layout;
     let params_length = Int64.mul 8L (Int64.of_int (List.length uids_all)) in
     let ctxt = { tdecls = tdecls; layout = params_layout } in
     let entry_ins = (compile_block name ctxt entry) in
-    let blocks_asm = List.map (fun (lbl, blk) -> compile_lbl_block name lbl ctxt blk) blocks in
+    let blocks_asm = List.map (fun (lbl, blk) -> print_endline "Ciao pine"; compile_lbl_block name lbl ctxt blk) blocks in
     let first_list : ins list = [
       (Pushq, [Reg Rbp]);
       (Movq, [Reg Rsp; Reg Rbp]);
@@ -643,6 +654,7 @@ let compile_fdecl (tdecls:(tid * ty) list) (name:string) ({ f_ty; f_param; f_cfg
       (Retq, [])
     ]
     in
+    print_endline "Ciao pane";
     [Asm.gtext (Platform.mangle name) (first_list @ entry_ins @ snd_list)] @
     blocks_asm
       (* { lbl = Platform.mangle name; global = true; asm = first_list @  }

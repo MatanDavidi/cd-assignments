@@ -12,7 +12,6 @@ let loc (startpos:Lexing.position) (endpos:Lexing.position) (elt:'a) : 'a node =
 %token NULL
 %token <string> STRING
 %token <string> IDENT
-%token <bool> BOOL
 
 %token TINT     /* int */
 %token TVOID    /* void */
@@ -56,7 +55,8 @@ let loc (startpos:Lexing.position) (endpos:Lexing.position) (elt:'a) : 'a node =
 
 %left IOR
 %left IAND
-%left AND OR
+%left OR
+%left AND
 %left EQEQ NEQ
 %left LT GT LTE GTE
 %left SHL SHR SAR
@@ -142,9 +142,9 @@ ty:
 gexp:
   | t=rtyp NULL { loc $startpos $endpos @@ CNull t }
   | i=INT       { loc $startpos $endpos @@ CInt i }
-  | b=BOOL      { loc $startpos $endpos @@ CBool b }
+  | b=bool      { loc $startpos $endpos @@ CBool b }
   | s=STRING    { loc $startpos $endpos @@ CStr s }
-  | NEW t=ty LBRACKET RBRACKET LBRACE elems=list(gexp) RBRACE
+  | NEW t=ty LBRACKET RBRACKET LBRACE elems=separated_list(COMMA, gexp) RBRACE
                 { loc $startpos $endpos @@ CArr (t, elems) }
 
 lhs:  
@@ -159,18 +159,16 @@ exp:
   | u=uop e=exp         { loc $startpos $endpos @@ Uop (u, e) }
   | id=IDENT            { loc $startpos $endpos @@ Id id }
   | s=STRING            { loc $startpos $endpos @@ CStr s }
-  | b=BOOL              { loc $startpos $endpos @@ CBool b }
+  | b=bool              { loc $startpos $endpos @@ CBool b }
   | e=exp LBRACKET i=exp RBRACKET
                         { loc $startpos $endpos @@ Index (e, i) }
   | e=exp LPAREN es=separated_list(COMMA, exp) RPAREN
                         { loc $startpos $endpos @@ Call (e,es) }
   | LPAREN e=exp RPAREN { e } 
-  | NEW t=ty LBRACKET RBRACKET LBRACE elems=list(exp) RBRACE  /* Explicitly initialized array */
+  | NEW t=ty LBRACKET RBRACKET LBRACE elems=separated_list(COMMA, exp) RBRACE  /* Explicitly initialized array */
                         { loc $startpos $endpos @@ CArr (t, elems) }
-  | NEW i=TINT LBRACKET len=exp RBRACKET                      /* Default-initialize int array */
-                        { loc $startpos $endpos @@ NewArr (TInt, len) }
-  | NEW b=TBOOL LBRACKET len=exp RBRACKET                     /* Default-initialize bool array */
-                        { loc $startpos $endpos @@ NewArr (TBool, len) }
+  | NEW t=ty LBRACKET len=exp RBRACKET                      /* Default-initialize int array */
+                        { loc $startpos $endpos @@ NewArr (t, len) }
 
 vdecl:
   | VAR id=IDENT EQ init=exp { (id, init) }

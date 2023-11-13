@@ -142,8 +142,7 @@ ty:
 gexp:
   | t=rtyp NULL { loc $startpos $endpos @@ CNull t }
   | i=INT       { loc $startpos $endpos @@ CInt i }
-  | t=TRUE      { loc $startpos $endpos @@ CBool true }
-  | f=FALSE     { loc $startpos $endpos @@ CBool false }
+  | b=BOOL      { loc $startpos $endpos @@ CBool b }
   | s=STRING    { loc $startpos $endpos @@ CStr s }
   | NEW t=ty LBRACKET RBRACKET LBRACE elems=list(gexp) RBRACE
                 { loc $startpos $endpos @@ CArr (t, elems) }
@@ -160,6 +159,7 @@ exp:
   | u=uop e=exp         { loc $startpos $endpos @@ Uop (u, e) }
   | id=IDENT            { loc $startpos $endpos @@ Id id }
   | s=STRING            { loc $startpos $endpos @@ CStr s }
+  | b=BOOL              { loc $startpos $endpos @@ CBool b }
   | e=exp LBRACKET i=exp RBRACKET
                         { loc $startpos $endpos @@ Index (e, i) }
   | e=exp LPAREN es=separated_list(COMMA, exp) RPAREN

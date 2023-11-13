@@ -137,7 +137,8 @@ rule token = parse
           if p.pos_cnum - p.pos_bol = 0 then directive 0 lexbuf 
           else raise (Lexer_error (lex_long_range lexbuf,
             Printf.sprintf "# can only be the 1st char in a line.")) }
-
+  | "true" { BOOL true }
+  | "false" { BOOL false }
   | lowercase (digit | character | '_')* { create_token lexbuf }
   | digit+ | "0x" hexdigit+ { INT (Int64.of_string (lexeme lexbuf)) }
   | whitespace+ { token lexbuf }

@@ -12,15 +12,18 @@ let loc (startpos:Lexing.position) (endpos:Lexing.position) (elt:'a) : 'a node =
 %token NULL
 %token <string> STRING
 %token <string> IDENT
+%token <bool> BOOL
 
 %token TINT     /* int */
 %token TVOID    /* void */
 %token TSTRING  /* string */
+%token TBOOL    /* bool */
 %token IF       /* if */
 %token ELSE     /* else */
 %token WHILE    /* while */
 %token RETURN   /* return */
 %token VAR      /* var */
+%token NEW      /* new */
 %token SEMI     /* ; */
 %token COMMA    /* , */
 %token LBRACE   /* { */
@@ -57,6 +60,9 @@ let loc (startpos:Lexing.position) (endpos:Lexing.position) (elt:'a) : 'a node =
 %nonassoc LBRACKET
 %nonassoc LPAREN
 
+%token TRUE     /* true */
+%token FALSE    /* true */
+
 /* ---------------------------------------------------------------------- */
 
 %start prog
@@ -92,6 +98,7 @@ arglist:
     
 ty:
   | TINT   { TInt }
+  | TBOOL  { TBool }
   | r=rtyp { TRef r } 
 
 %inline ret_ty:
@@ -126,8 +133,12 @@ ty:
   | TILDE { Bitnot }
 
 gexp:
-  | t=rtyp NULL  { loc $startpos $endpos @@ CNull t }
-  | i=INT      { loc $startpos $endpos @@ CInt i }
+  | t=rtyp NULL { loc $startpos $endpos @@ CNull t }
+  | i=INT       { loc $startpos $endpos @@ CInt i }
+  | t=TRUE      { loc $startpos $endpos @@ CBool true }
+  | f=FALSE     { loc $startpos $endpos @@ CBool false }
+  | NEW t=ty LBRACKET RBRACKET LBRACE elems=list(gexp) RBRACE
+                { loc $startpos $endpos @@ CArr (t, elems) }
 
 lhs:  
   | id=IDENT            { loc $startpos $endpos @@ Id id }
@@ -145,6 +156,12 @@ exp:
   | e=exp LPAREN es=separated_list(COMMA, exp) RPAREN
                         { loc $startpos $endpos @@ Call (e,es) }
   | LPAREN e=exp RPAREN { e } 
+  | NEW t=ty LBRACKET RBRACKET LBRACE elems=list(exp) RBRACE  /* Explicitly initialized array */
+                        { loc $startpos $endpos @@ CArr (t, elems) }
+  | NEW i=TINT LBRACKET len=exp RBRACKET                      /* Default-initialize int array */
+                        { loc $startpos $endpos @@ NewArr (TInt, len) }
+  | NEW b=TBOOL LBRACKET len=exp RBRACKET                     /* Default-initialize bool array */
+                        { loc $startpos $endpos @@ NewArr (TBool, len) }
 
 vdecl:
   | VAR id=IDENT EQ init=exp { (id, init) }
@@ -171,3 +188,7 @@ else_stmt:
   | (* empty *)       { [] }
   | ELSE b=block      { b }
   | ELSE ifs=if_stmt  { [ ifs ] }
+
+bool:
+  | TRUE  { true }
+  | FALSE { false }

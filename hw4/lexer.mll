@@ -30,12 +30,15 @@
   ("void", TVOID);
   ("int", TINT);
   ("string", TSTRING);
+  ("bool", TBOOl);
   ("else", ELSE);
   ("if", IF);
   ("while", WHILE);
   ("return", RETURN);
   ("var", VAR);
   ("global", GLOBAL);
+  ("true", TRUE);
+  ("false", FALSE);
 
   (* Symbols *)
   ( ";", SEMI);

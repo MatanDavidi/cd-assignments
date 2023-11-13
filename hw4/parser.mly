@@ -53,7 +53,10 @@ let loc (startpos:Lexing.position) (endpos:Lexing.position) (elt:'a) : 'a node =
 %token TILDE    /* ~ */
 %token BANG     /* ! */
 %token GLOBAL   /* global */
+%token FOR
 
+%left EQEQ 
+%left LT GT 
 %left PLUS DASH
 %left STAR
 %nonassoc BANG
@@ -169,6 +172,18 @@ exp:
 vdecl:
   | VAR id=IDENT EQ init=exp { (id, init) }
 
+vdecls:
+  | v=separated_list(COMMA, vdecl) { v }
+
+exp_opt:
+  | e=exp { Some e }
+  | { None }
+
+stmt_opt:
+  | s=stmt { Some s }
+  | { None }
+
+
 stmt: 
   | d=vdecl SEMI        { loc $startpos $endpos @@ Decl(d) }
   | p=lhs EQ e=exp SEMI { loc $startpos $endpos @@ Assn(p,e) }
@@ -179,8 +194,9 @@ stmt:
   | RETURN e=exp SEMI   { loc $startpos $endpos @@ Ret(Some e) }
   | WHILE LPAREN e=exp RPAREN b=block  
                         { loc $startpos $endpos @@ While(e, b) } 
-  | FOR LPAREN vars=list(vdecl) SEMI cond=exp? SEMI upd=stmt? RPAREN b=block
-                        { loc $startpos $endpos @@ For(vars, cond, upd, b) }
+  | FOR LPAREN v=vdecls SEMI e=exp_opt SEMI s=stmt_opt RPAREN b=block
+                    { loc $startpos $endpos @@ For(v, e, s, b) }
+  
 
 block:
   | LBRACE stmts=list(stmt) RBRACE { stmts }

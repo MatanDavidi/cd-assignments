@@ -30,7 +30,7 @@
   ("void", TVOID);
   ("int", TINT);
   ("string", TSTRING);
-  ("bool", TBOOl);
+  ("bool", TBOOL);
   ("else", ELSE);
   ("if", IF);
   ("while", WHILE);

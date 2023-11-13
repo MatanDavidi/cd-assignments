@@ -137,6 +137,7 @@ gexp:
   | i=INT       { loc $startpos $endpos @@ CInt i }
   | t=TRUE      { loc $startpos $endpos @@ CBool true }
   | f=FALSE     { loc $startpos $endpos @@ CBool false }
+  | s=STRING    { loc $startpos $endpos @@ CStr s }
   | NEW t=ty LBRACKET RBRACKET LBRACE elems=list(gexp) RBRACE
                 { loc $startpos $endpos @@ CArr (t, elems) }
 
@@ -151,6 +152,7 @@ exp:
   | e1=exp b=bop e2=exp { loc $startpos $endpos @@ Bop (b, e1, e2) }
   | u=uop e=exp         { loc $startpos $endpos @@ Uop (u, e) }
   | id=IDENT            { loc $startpos $endpos @@ Id id }
+  | s=STRING            { loc $startpos $endpos @@ CStr s }
   | e=exp LBRACKET i=exp RBRACKET
                         { loc $startpos $endpos @@ Index (e, i) }
   | e=exp LPAREN es=separated_list(COMMA, exp) RPAREN

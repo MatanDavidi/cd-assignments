@@ -436,9 +436,15 @@ let cmp_fdecl (c:Ctxt.t) (f:Ast.fdecl node) : Ll.fdecl * (Ll.gid * Ll.gdecl) lis
    - OAT arrays are always handled via pointers. A global array of arrays will
      be an array of pointers to arrays emitted as additional global declarations.
 *)
+let bool_value (x:bool) : int64 = if x then 1L else 0L
 
 let rec cmp_gexp c (e:Ast.exp node) : Ll.gdecl * (Ll.gid * Ll.gdecl) list =
-  failwith "cmp_gexp not implemented"
+  match e.elt with
+  |CNull x -> ((cmp_rty x, GNull), [])
+  |CBool x -> ((I1, GInt (bool_value x)), [])
+  |CInt x  -> ((I64, GInt x), [])
+  |CStr x  -> ((converter (CStr x), GString x), [])
+  |_ -> failwith "CArr implementation missing"
 
 (* Oat internals function context ------------------------------------------- *)
 let internals = [

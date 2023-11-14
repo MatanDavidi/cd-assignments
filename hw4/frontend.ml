@@ -365,8 +365,50 @@ let cmp_function_ctxt (c:Ctxt.t) (p:Ast.prog) : Ctxt.t =
    Only a small subset of OAT expressions can be used as global initializers
    in well-formed programs. (The constructors starting with C). 
 *)
-let cmp_global_ctxt (c:Ctxt.t) (p:Ast.prog) : Ctxt.t =
-  failwith "cmp_global_ctxt not implemented"
+let rec converter (e:Ast.exp) : Ll.ty =
+  match e with
+  | CNull x -> Void
+  | CBool x -> I1
+  | CInt x -> I64
+  | Bop (x, _, _) ->
+    begin match x with 
+    | Add | Sub | Mul | IAnd | IOr | Shl | Shr | Sar -> I64
+    | _ -> I1
+    end
+  | Uop (u, _) ->
+    begin match u with
+    | Neg | Bitnot -> I64
+    | _ -> I1 
+    end
+  | Index (x, _) | Call (x, _) -> converter x.elt
+  | Id x -> Ptr (cmp_rty RString)
+  | NewArr (x, _) -> Ptr (cmp_rty (RArray x))
+  | _ -> failwith "CArr and CStr implementation missing"
+
+let rec map_cmp_ty (t:(ty * id) list) : Ll.ty list= 
+  match t with
+  | [] -> []
+  | (x,_)::xs -> (cmp_ty x) :: map_cmp_ty xs
+
+let rec helper_global_ctxt (c:Ctxt.t) (p:Ast.prog) : Ctxt.t =  
+  begin match p with
+  | (x::xs) -> 
+    begin match x with
+    | Gvdecl z ->
+      let id = z.elt.name in
+      let ty = converter z.elt.init.elt in
+      helper_global_ctxt (Ctxt.add c id (ty, Ll.Gid id)) xs
+    | Gfdecl z -> 
+      let id = z.elt.fname in
+      let ret_ty = cmp_ret_ty z.elt.frtyp  in
+      let args = map_cmp_ty z.elt.args in
+      helper_global_ctxt (Ctxt.add c id (Ll.Fun (args, ret_ty), Ll.Gid id)) xs
+    end
+  | _ -> c
+  end
+
+let cmp_global_ctxt (c:Ctxt.t) (p:Ast.prog) : Ctxt.t = helper_global_ctxt c p
+
 
 (* Compile a function declaration in global context c. Return the LLVMlite cfg
    and a list of global declarations containing the string literals appearing

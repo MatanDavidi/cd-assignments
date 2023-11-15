@@ -287,6 +287,63 @@ let oat_alloc_array (t:Ast.ty) (size:Ll.operand) : Ll.ty * operand * stream =
     [ arr_id, Call(arr_ty, Gid "oat_alloc_array", [I64, size])
     ; ans_id, Bitcast(arr_ty, Id arr_id, ans_ty) ]
 
+let cmp_str (s:string) : Ll.ty * Ll.operand * stream =
+  (* The `+ 1` is due to the first element in the compiled array being the length of the array *)
+  let strlen = String.length s in
+  let strarr = Array (strlen + 1, I8) in
+  (* 
+    The following three are arbitrary and just picked to be slightly semantic 
+    These symbols are used to identify the string and its array.
+  *)
+  let gstr_sym = gensym "glbl_str" in 
+  let strarr_sym = gensym "arr_of_str" in
+  let load_sym = gensym "str_load" in
+  let str_stream = 
+    (* Hoist the string to global *)
+    [G (gstr_sym, (strarr, GString s))] >@
+    (* Bitcast the string to [n x i8] if necessary *)
+    [G (strarr_sym, (Ptr I8, GBitcast (Ptr strarr, GGid gstr_sym, Ptr I8)))] >@
+    (* Load contents of string into array *)
+    [I (load_sym, Load (Ptr (Ptr I8), Gid strarr_sym))]
+  in
+  (* Return array of type *I8 that contains the loaded data *)
+  (Ptr I8, Id load_sym, str_stream)
+
+let cmp_id (c:Ctxt.t) (id:id) : Ll.ty * Ll.operand * stream =
+  let (ty, operand) = Ctxt.lookup id c in
+  let id_sym = gensym id in
+  match ty with
+  (* If the ID points to an array, cast it to an LLVM array pointer *)
+  | Ptr (Array (_, arr_ty)) -> (Ptr arr_ty, Id id_sym, [I (id_sym, Bitcast (ty, operand, Ptr arr_ty))])
+  (* If the ID points to anything else, don't cast it, just load it *)
+  | Ptr (ptr_ty) -> (ptr_ty, Id id_sym, [I (id_sym, Load (ty, operand))])
+  | _ -> failwith "Qui non so che altro fare rip :,("
+
+let convert_binop (bop:binop) (re_ty:Ll.ty) (op1:Ll.operand) (op2:Ll.operand) : insn =
+  match bop with
+  | Add -> Binop (Add, re_ty, op1, op2)
+  | Sub -> Binop (Sub, re_ty, op1, op2)
+  | Mul -> Binop (Mul, re_ty, op1, op2)
+  | Eq -> Icmp (Eq, re_ty, op1, op2)
+  | Neq -> Icmp (Ne, re_ty, op1, op2)
+  | Lt -> Icmp (Slt, re_ty, op1, op2)
+  | Lte -> Icmp (Sle, re_ty, op1, op2)
+  | Gt -> Icmp (Sgt, re_ty, op1, op2)
+  | Gte -> Icmp (Sge, re_ty, op1, op2)
+  | And -> Binop (And, re_ty, op1, op2) (* UI AR NOT SCIUR *)
+  | Or -> Binop (Or, re_ty, op1, op2)   (* UI AR NOT SCIUR *)
+  | IAnd -> Binop (And, re_ty, op1, op2)
+  | IOr -> Binop (Or, re_ty, op1, op2)
+  | Shl -> Binop (Shl, re_ty, op1, op2)
+  | Shr -> Binop (Lshr, re_ty, op1, op2)
+  | Sar -> Binop (Ashr, re_ty, op1, op2)
+
+let convert_unop (uop:unop) (re_ty:Ll.ty) (op:Ll.operand) : insn = 
+  match uop with
+  | Neg -> Binop (Mul, re_ty, op, Const (Int64.neg 1L))
+  | Lognot -> Icmp (Eq, re_ty, op, Const 0L) (* UI AR NOT SCIUR *) (* (Add, re_ty, 1L, Binop (Xor, re_ty, op, Const 0xFFFFFFFFL)) *)
+  | Bitnot -> Binop (Xor, re_ty, op, Const (Int64.neg 1L))
+
 (* Compiles an expression exp in context c, outputting the Ll operand that will
    recieve the value of the expression, and the stream of instructions
    implementing the expression. 
@@ -305,7 +362,112 @@ let oat_alloc_array (t:Ast.ty) (size:Ll.operand) : Ll.ty * operand * stream =
 *)
 
 let rec cmp_exp (c:Ctxt.t) (exp:Ast.exp node) : Ll.ty * Ll.operand * stream =
-  failwith "cmp_exp not implemented"
+  let int64_of_bool b = if b then 1L else 0L in
+  match exp.elt with
+  | CNull rty -> 
+    let ll_ty = cmp_rty rty in
+    (Ptr ll_ty, Null, [])
+  | CBool b -> 
+    (I1, Const (int64_of_bool b), [])
+  | CInt i ->
+    (I64, Const i, [])
+  | CStr s -> cmp_str s
+  | CArr (ty, exp_nodes_list) -> cmp_carr c ty exp_nodes_list
+  | NewArr (ty, len_exp_node) -> cmp_newarr c ty len_exp_node
+  | Id id -> cmp_id c id
+  | Index (ref_exp_node, index_exp_node) -> cmp_index c ref_exp_node index_exp_node
+  | Call (fname_exp_node, fparams_exp_nodes_list) -> cmp_call c fname_exp_node fparams_exp_nodes_list
+  | Bop (bop, exp_node_op1, exp_node_op2) -> cmp_bop c bop exp_node_op1 exp_node_op2
+  | Uop (uop, exp_node_op) -> cmp_uop c uop exp_node_op
+
+and cmp_carr (c:Ctxt.t) (ty:Ast.ty) (exp_nodes_list:exp node list) : Ll.ty * Ll.operand * stream =
+  (* Get array's length *)
+  let arrlen = Int64.of_int (List.length exp_nodes_list) in
+  (* Allocate space on stack for array *)
+  let alloc_ty, alloc_operand, alloc_stream = oat_alloc_array ty (Const arrlen) in
+  (* Define function to fold over all expressions in array to allocate their contents *)
+  let f = fun (arr_ty, prev_array, prev_index, prev_stream) exp -> 
+    (* Get compile expression *)
+    let curr_ty, curr_op, curr_stream = cmp_exp c exp in
+    (* Define symbol to associate to expression allocation/storage *)
+    let gep_sym = gensym "arr_gep" in 
+    (* Define expression allocation instruction *)
+    let alloc_gep_stream = [I (gep_sym, Gep (arr_ty, prev_array, [Const 0L; Const 1L; Const prev_index]))] in
+    (* Define expression storage (store) instruction *)
+    let store_stream = [I (gep_sym, Store (curr_ty, curr_op, Id gep_sym))] in
+    (* "Concatenate" new gep allocation and expression storage streams to previous array  *)
+    (arr_ty, prev_array, (Int64.add prev_index 1L), prev_stream >@ curr_stream >@ alloc_gep_stream >@ store_stream)
+  in
+  (* Not sure what to do with array type, second-to-last array element operand and index gotten with fold *)
+  let _, _, _, store_stream = List.fold_left f (alloc_ty, alloc_operand, 0L, []) exp_nodes_list in
+  (alloc_ty, alloc_operand, alloc_stream >@ store_stream)
+
+  and cmp_newarr (c:Ctxt.t) (ty:Ast.ty) (len_exp_node:exp node) : Ll.ty * Ll.operand * stream =
+    (* Compile length expression -- returned type should be int, so it's ignored *)
+    let _, cmp_operand, cmp_stream = cmp_exp c len_exp_node in
+    (* Allocate space for array on stack *)
+    let alloc_ty, alloc_operand, alloc_stream = oat_alloc_array ty cmp_operand in
+    (alloc_ty, alloc_operand, cmp_stream >@ alloc_stream)
+
+  and cmp_index (c:Ctxt.t) (ref_exp_node:exp node) (index_exp_node:exp node) : Ll.ty * Ll.operand * stream =
+    (* For reference, this expression will look like `arr[5]` *)
+    (* Compile array reference expression *)
+    let ref_ty, ref_operand, ref_stream = cmp_exp c ref_exp_node in
+    (* Compile index expression -- once again ignore implied `int` type *)
+    let _, index_operand, index_stream = cmp_exp c index_exp_node in
+    (* Assign arbitrary names to reference and index *)
+    let ref_sym = gensym "reference" in
+    let index_sym = gensym "index" in
+    (* Only return something if ref_ty (i.e. type of `arr` in our example) is a pointer to an array *)
+    match ref_ty with
+    | Ptr (Struct [_; Array (_, arr_ty)]) -> 
+      (* Assemble instructions stream *)
+      let cmp_stream = 
+        ref_stream >@
+        index_stream >@
+        [I (ref_sym, Gep (ref_ty, ref_operand, [Const 0L; Const 1L; index_operand]))] >@
+        [I (index_sym, Load (Ptr arr_ty, Id ref_sym))]
+      in
+      (ref_ty, Id index_sym, cmp_stream)
+    | _ -> failwith "Invalid syntax: Index reference compiles to non-array type"
+
+  and cmp_call (c:Ctxt.t) (fname_exp_node: exp node) (fparams_exp_nodes_list: exp node list) : Ll.ty * Ll.operand * stream =
+    match fname_exp_node with
+    | { elt = Id f_name; loc = _ } ->
+      (* Lookup function name *)
+      let f_ty, f_op = Ctxt.lookup f_name c in
+      (* Make sure function type is "pointer to function" *)
+      begin match f_ty with
+      | Ptr (Fun (args_ty, re_ty)) -> 
+        let f (args, stream) arg_to_c = 
+          let arg_ty, arg_op, arg_stream = cmp_exp c arg_to_c in
+          (args @ [arg_ty, arg_op], stream >@ arg_stream)
+        in
+        let new_args, new_stream = List.fold_left f ([], []) fparams_exp_nodes_list in
+        let call_sym = f_name ^ "_call" in
+        let call_stream = [I (call_sym, Call (re_ty, f_op, new_args))] in
+        (re_ty, Id call_sym, new_stream >@ call_stream)
+        | _ -> failwith "Could not compile: function type should be \"Pointer to function\""
+      end
+    | _ -> failwith "Invalid argument passed to function `cmp_call`"
+
+  and cmp_bop (c:Ctxt.t) (bop:binop) (exp_node_op1:exp node) (exp_node_op2:exp node) : Ll.ty * Ll.operand * stream = 
+    let _, _, re_ty = typ_of_binop bop in
+    let op1_ty, op1, op1_stream = cmp_exp c exp_node_op1 in
+    let op2_ty, op2, op2_stream = cmp_exp c exp_node_op2 in
+    let res_sym = gensym "bop_ans" in
+    let mov_stream = [I (res_sym, convert_binop bop (cmp_ty re_ty) op1 op2)] in
+    let bop_stream = op1_stream >@ op2_stream >@ mov_stream in
+    (cmp_ty re_ty, Id res_sym, bop_stream)
+
+  and cmp_uop (c:Ctxt.t) (uop:unop) (exp_node_op:exp node) : Ll.ty * Ll.operand * stream =
+    let _, re_ty = typ_of_unop uop in
+    let op_ty, op, op_stream = cmp_exp c exp_node_op in
+    let res_sym = gensym "uop_ans" in
+    let mov_stream = [I (res_sym, convert_unop uop (cmp_ty re_ty) op)] in
+    let uop_stream = op_stream >@ mov_stream in
+    (cmp_ty re_ty, Id res_sym, uop_stream)
+
 
 (* Compile a statement in context c with return typ rt. Return a new context, 
    possibly extended with new local bindings, and the instruction stream

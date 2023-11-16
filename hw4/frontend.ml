@@ -679,9 +679,10 @@ let cmp_function_ctxt (c:Ctxt.t) (p:Ast.prog) : Ctxt.t =
 *)
 let rec converter (e:Ast.exp) : Ll.ty =
   match e with
-  | CNull x -> Void
-  | CBool x -> I1
-  | CInt x -> I64
+  | CNull x -> Ptr (Ptr (cmp_rty x))
+  | CBool x -> Ptr I1
+  | CInt x -> Ptr I64
+  | CStr str -> Ptr (Ptr I8)
   | Bop (x, _, _) ->
     begin match x with 
     | Add | Sub | Mul | IAnd | IOr | Shl | Shr | Sar -> I64
@@ -694,8 +695,8 @@ let rec converter (e:Ast.exp) : Ll.ty =
     end
   | Index (x, _) | Call (x, _) -> converter x.elt
   | Id x -> Ptr (cmp_rty RString)
+  | CArr (arr_ty, _) -> (Ptr (Ptr (Struct [I64; Array(0, cmp_ty arr_ty)])))
   | NewArr (x, _) -> Ptr (cmp_rty (RArray x))
-  | _ -> failwith "CArr and CStr implementation missing"
 
 let rec map_cmp_ty (t:(ty * id) list) : Ll.ty list= 
   match t with
@@ -711,10 +712,10 @@ let rec helper_global_ctxt (c:Ctxt.t) (p:Ast.prog) : Ctxt.t =
       let ty = converter z.elt.init.elt in
       helper_global_ctxt (Ctxt.add c id (ty, Ll.Gid id)) xs
     | Gfdecl z -> 
-      let id = z.elt.fname in
+      (* let id = z.elt.fname in
       let ret_ty = cmp_ret_ty z.elt.frtyp  in
-      let args = map_cmp_ty z.elt.args in
-      helper_global_ctxt (Ctxt.add c id (Ll.Fun (args, ret_ty), Ll.Gid id)) xs
+      let args = map_cmp_ty z.elt.args in *)
+      helper_global_ctxt c xs
     end
   | _ -> c
   end

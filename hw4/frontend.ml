@@ -737,11 +737,27 @@ let cmp_global_ctxt (c:Ctxt.t) (p:Ast.prog) : Ctxt.t = helper_global_ctxt c p
 let rec streamgen (c:Ctxt.t) (s:stream) (args:(ty * id) list) : Ctxt.t * stream = 
   match args with
   | [] -> (c,s)
-  | (x::xs) -> let ty, id = x in
-    match cmp_ty ty with
-    | I1 | I8 | I64 -> let newone = s >@ [I (gensym id, Alloca (cmp_ty ty))] >@ [I (gensym id, Store (cmp_ty ty, Id id, Id (gensym id)))] in
+  | (x::xs) -> 
+    (* let ty, id = x in *)
+    let fold_args = fun (prev_c, prev_stream) (ty, id) ->
+      let id_sym = gensym id in
+      let store_sym = gensym ("store_" ^ id) in
+      let ll_ty = cmp_ty ty in
+      let new_c = [id, (Ptr ll_ty, Ll.Id id_sym)] in
+      let alloc_stream = [E (id_sym, Alloca ll_ty)] in
+      let store_stream = [I (store_sym, Store (ll_ty, Id id, Id id_sym))] in
+      (new_c @ prev_c, prev_stream >@ alloc_stream >@ store_stream)
+    in
+    List.fold_left fold_args (c, s) args
+    (* match cmp_ty ty with
+    | I1 | I8 | I64 -> 
+      let newone = 
+        s >@
+        [E (gensym id, Alloca (cmp_ty ty))] >@
+        [I (gensym id, Store (cmp_ty ty, Id id, Id (gensym id)))]
+      in
       streamgen (Ctxt.add c id (Ptr (cmp_ty ty), Id (gensym id))) newone xs
-    | _ -> streamgen (Ctxt.add c id (cmp_ty ty, Id id)) s xs
+    | _ -> streamgen (Ctxt.add c id (cmp_ty ty, Id id)) s xs *)
 
 let typer ((a,b):(ty * id)) : Ll.ty = cmp_ty a
 let typer1 ((a,b):(ty * id)) : id = b
@@ -749,11 +765,12 @@ let typer1 ((a,b):(ty * id)) : id = b
 let cmp_fdecl (c:Ctxt.t) (f:Ast.fdecl node) : Ll.fdecl * (Ll.gid * Ll.gdecl) list =
   let return = f.elt.frtyp in 
   let args =  f.elt.args in 
-  let newctxt,newstrm = streamgen c [] args in
-  let block = cmp_block newctxt (cmp_ret_ty return) f.elt.body in
-  let cfg,gvars = cfg_of_stream newstrm in
+  let newctxt, newstrm = streamgen c [] args in
+  let _, block = cmp_block newctxt (cmp_ret_ty return) f.elt.body in
+  let cfg, gvars = cfg_of_stream (newstrm >@ block) in
   let func = (List.map typer args, cmp_ret_ty return) in 
-  let param = List.map typer1 args in ({f_ty=func; f_param=param; f_cfg=cfg}, gvars)
+  let param = List.map typer1 args in 
+  ({f_ty=func; f_param=param; f_cfg=cfg}, gvars)
 
 
 
@@ -772,7 +789,7 @@ let bool_value (x:bool) : int64 = if x then 1L else 0L
 
 let rec cmp_gexp c (e:Ast.exp node) : Ll.gdecl * (Ll.gid * Ll.gdecl) list =
   match e.elt with
-  |CNull x -> ((cmp_rty x, GNull), [])
+  |CNull x -> ((Ptr (cmp_rty x), GNull), [])
   |CBool x -> ((I1, GInt (bool_value x)), [])
   |CInt x  -> ((I64, GInt x), [])
   |CStr x  -> ((converter (CStr x), GString x), [])

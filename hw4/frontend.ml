@@ -468,6 +468,48 @@ and cmp_carr (c:Ctxt.t) (ty:Ast.ty) (exp_nodes_list:exp node list) : Ll.ty * Ll.
     let uop_stream = op_stream >@ mov_stream in
     (cmp_ty re_ty, Id res_sym, uop_stream)
 
+let cmp_assn (c:Ctxt.t) (ref_exp_node:exp node) (val_exp_node:exp node) : Ctxt.t * stream =
+  let val_ty, val_operand, val_stream = cmp_exp c val_exp_node in
+  match ref_exp_node.elt with
+  | Id id -> 
+    let store_sym = gensym "store_assn_id" in
+    let _, ref_operand = Ctxt.lookup id c in
+    (c, val_stream >@ [I (store_sym, Store (val_ty, val_operand, ref_operand))])
+  | Index (arr_exp_node, index_exp_node) -> 
+    let arr_ty, arr_operand, arr_stream = cmp_exp c arr_exp_node in
+    (* Again, ignore type that is assumed to be int *)
+    let _, index_operand, index_stream = cmp_exp c index_exp_node in
+    let store_sym = gensym "store_assn_arr" in
+    let arr_sym = gensym "arr_assn" in
+    let assn_stream = 
+      [I (arr_sym, Gep (arr_ty, arr_operand, [Const 0L; Const 1L; index_operand]))] >@
+      [I (store_sym, Store (val_ty, val_operand, Id arr_sym))] 
+    in
+    (c, val_stream >@ arr_stream >@ index_stream >@ assn_stream)
+  | _ -> failwith "Invalid lhs expression for assignment statement"
+
+let cmp_decl (c:Ctxt.t) ((id, assn_exp_node):vdecl) : Ctxt.t * stream =
+  let assn_ty, assn_operand, assn_stream = cmp_exp c assn_exp_node in
+  let decl_sym = gensym id ^ "_decl" in
+  let new_c = Ctxt.add c id (Ptr assn_ty, Id decl_sym) in
+  let alloca_stream = [E (decl_sym, Alloca assn_ty)] in
+  let store_stream = [I (decl_sym, Store (assn_ty, assn_operand, Id decl_sym))] in
+  (* TODO: Check if order of streams is correct? *)
+  (new_c, assn_stream >@ alloca_stream >@ store_stream)
+
+let cmp_ret (c:Ctxt.t) (opt:exp node option) : Ctxt.t * stream =
+  match opt with
+  | Some ret_exp -> 
+    let ret_ty, ret_operand, ret_stream = cmp_exp c ret_exp in
+    let term_stream =  [T (Ret (ret_ty, Some ret_operand))] in
+    (c, ret_stream >@ term_stream)
+  | None -> 
+    (c, [T (Ret (Void, None))])
+
+(* The following function is implemented ad cazzum, and should not be treated as correct by any means *)
+let cmp_scall (c:Ctxt.t) (func_exp_node:exp node) (args_exp_nodes_list:exp node list) : Ctxt.t * stream =
+  let call_ty, call_operand, call_stream = cmp_exp c ({ elt = (Call (func_exp_node, args_exp_nodes_list)); loc = Range.norange}) in
+  (c, call_stream)
 
 (* Compile a statement in context c with return typ rt. Return a new context, 
    possibly extended with new local bindings, and the instruction stream
@@ -497,7 +539,115 @@ and cmp_carr (c:Ctxt.t) (ty:Ast.ty) (exp_nodes_list:exp node list) : Ll.ty * Ll.
  *)
 
 let rec cmp_stmt (c:Ctxt.t) (rt:Ll.ty) (stmt:Ast.stmt node) : Ctxt.t * stream =
-  failwith "cmp_stmt not implemented"
+  match stmt.elt with
+  | Assn (ref_exp_node, val_exp_node) -> cmp_assn c ref_exp_node val_exp_node
+  | Decl var_decl -> cmp_decl c var_decl
+  | Ret opt -> cmp_ret c opt
+  | SCall (func_exp_node, args_exp_nodes_list) -> cmp_scall c func_exp_node args_exp_nodes_list
+  | If (cond_exp_node, true_stmt_nodes_list, false_stmt_nodes_list) -> cmp_if c rt cond_exp_node true_stmt_nodes_list false_stmt_nodes_list
+  | While (cond_exp_node, body_stmt_nodes_list) -> cmp_while c rt cond_exp_node body_stmt_nodes_list
+  | For (vdecls, cond_exp_node_opt, updates_stmt_nodes_list, body_stmt_nodes_list) -> cmp_for c rt vdecls cond_exp_node_opt updates_stmt_nodes_list body_stmt_nodes_list
+
+and cmp_if (c:Ctxt.t) (rt:Ll.ty) (cond_exp_node:exp node) (true_stmt_nodes_list:stmt node list) (false_stmt_nodes_list:stmt node list) =
+let cond_ty, cond_operand, cond_stream = cmp_exp c cond_exp_node in
+(* let f = fun (prev_c, prev_stream) curr_stmt -> 
+  let (curr_c, curr_stream) = cmp_stmt prev_c rt curr_stmt in
+  (curr_c, prev_stream >@ curr_stream)
+in *)
+let (true_context, true_stream) =   cmp_block c rt true_stmt_nodes_list in (* List.fold_left f (c, []) true_stmt_nodes_list in *)
+let (false_context, false_stream) = cmp_block true_context rt false_stmt_nodes_list in (* List.fold_left f (true_context, []) false_stmt_nodes_list in *)
+let if_sym = gensym "if" in
+let if_lbl = [L if_sym] in
+let then_sym = gensym "then" in
+let then_lbl = [L then_sym] in
+let else_sym = gensym "else" in
+let else_lbl = [L else_sym] in
+let end_if_sym = gensym "end_if" in
+let end_if_lbl = [L end_if_sym] in
+let if_term = [T (Br if_sym)] in
+let end_if_term = [T (Br end_if_sym)] in
+let if_cbr_term = [T (Cbr (cond_operand, then_sym, else_sym))] in
+let else_cbr_term = [T (Cbr (cond_operand, then_sym, end_if_sym))] in
+let true_term = match true_stream with | [] -> [] | (i :: _) -> [i] in
+let false_term = match false_stream with | [] -> [] | (i :: _) -> [i] in
+(* If both blocks end in a return, adjust overall return *)
+let ret_stream = 
+  match (true_term, false_term) with
+  | [T (Ret (Void, None))], [T (Ret (Void, None))] -> [T (Ret (Void, None))]
+  | [T (Ret (true_ty, Some true_op))], [T (Ret (false_ty, Some false_op))] -> [T (Ret ((false_ty, Some true_op)))]
+  | _ -> []
+in
+let if_stream = 
+  if_term >@
+  if_lbl >@
+  cond_stream >@
+  if_cbr_term >@
+  then_lbl >@
+  true_stream >@
+  end_if_term >@
+  else_lbl >@
+  false_stream >@
+  end_if_term >@
+  end_if_lbl >@
+  ret_stream
+in
+let if_no_else_stream = 
+  if_term >@
+  if_lbl >@
+  cond_stream >@
+  else_cbr_term >@
+  then_lbl >@
+  true_stream >@
+  end_if_term >@
+  end_if_lbl >@
+  ret_stream in
+if false_stream = [] then
+  (c, if_stream)
+else
+  (c, if_no_else_stream)
+
+and cmp_while (c:Ctxt.t) (rt:Ll.ty) (cond_exp_node:exp node) (body_block:Ast.block) : Ctxt.t * stream =
+  let cond_ty, cond_operand, cond_stream = cmp_exp c cond_exp_node in
+  let body_c, body_stream = cmp_block c rt body_block in
+  let cond_sym = gensym "while_cond" in
+  let cond_lbl = [L cond_sym] in
+  let body_sym = gensym "while_body" in
+  let body_lbl = [L body_sym] in
+  let end_sym = gensym "while_end" in
+  let end_lbl = [L end_sym] in
+  let while_term_br = [T (Br (cond_sym))] in
+  let while_term_cbr = [T (Cbr (cond_operand, body_sym, end_sym))] in
+  let while_stream = 
+    cond_lbl >@
+    cond_stream >@
+    while_term_cbr >@
+    body_lbl >@
+    body_stream >@
+    while_term_br >@
+    end_lbl
+  in
+  (c, while_stream)
+
+and cmp_for (c:Ctxt.t) (rt:Ll.ty) (vdecls:vdecl list) (cond_exp_node_opt:exp node option) (update_stmt_node_opt:stmt node option) (body_stmt_nodes_list:Ast.block) : Ctxt.t * stream = 
+  (* Function cmp_vdecls is missing, so we create our own *)
+  let vdecl_f = 
+    begin 
+      fun (prev_c, prev_stream) (vdecl) -> 
+        let curr_c, curr_stream = cmp_decl prev_c vdecl in
+        (curr_c, prev_stream >@ curr_stream)
+    end in
+  let vdecl_c, vdecl_stream = List.fold_left vdecl_f (c, []) vdecls in
+  let cond_exp = match cond_exp_node_opt with
+  | None -> { elt = CBool true; loc = Range.norange }
+  | Some exp -> exp
+  in 
+  let body_stmts = match update_stmt_node_opt with
+  | None -> body_stmt_nodes_list
+  | Some update_stmt -> body_stmt_nodes_list @ [update_stmt]
+  in
+  let while_stmt = While (cond_exp, body_stmts) in
+  let res_c, res_stream = cmp_stmt c rt { elt = while_stmt; loc = Range.norange } in
+  (c, vdecl_stream >@ res_stream)
 
 (* Compile a series of statements *)
 and cmp_block (c:Ctxt.t) (rt:Ll.ty) (stmts:Ast.block) : Ctxt.t * stream =

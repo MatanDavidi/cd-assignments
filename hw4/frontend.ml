@@ -456,7 +456,7 @@ and cmp_carr (c:Ctxt.t) (ty:Ast.ty) (exp_nodes_list:exp node list) : Ll.ty * Ll.
     let op1_ty, op1, op1_stream = cmp_exp c exp_node_op1 in
     let op2_ty, op2, op2_stream = cmp_exp c exp_node_op2 in
     let res_sym = gensym "bop_ans" in
-    let mov_stream = [I (res_sym, convert_binop bop (cmp_ty re_ty) op1 op2)] in
+    let mov_stream = [I (res_sym, convert_binop bop (op1_ty) op1 op2)] in
     let bop_stream = op1_stream >@ op2_stream >@ mov_stream in
     (cmp_ty re_ty, Id res_sym, bop_stream)
 

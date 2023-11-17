@@ -790,11 +790,27 @@ let bool_value (x:bool) : int64 = if x then 1L else 0L
 
 let rec cmp_gexp c (e:Ast.exp node) : Ll.gdecl * (Ll.gid * Ll.gdecl) list =
   match e.elt with
-  |CNull x -> ((Ptr (cmp_rty x), GNull), [])
-  |CBool x -> ((I1, GInt (bool_value x)), [])
-  |CInt x  -> ((I64, GInt x), [])
-  |CStr x  -> ((converter (CStr x), GString x), [])
-  |_ -> failwith "CArr implementation missing"
+  | CNull x -> ((Ptr (cmp_rty x), GNull), [])
+  | CBool x -> ((I1, GInt (bool_value x)), [])
+  | CInt x -> ((I64, GInt x), [])
+  | CStr x -> 
+    let str_sym = gensym "gstr_id" in
+    let strarr = Array ((String.length x) + 1, I8) in
+    ((Ptr I8, GBitcast (Ptr strarr, GGid str_sym, Ptr I8)), [str_sym, (strarr, GString x)])
+  | CArr (arr_ty, elements_nodes_list) -> 
+    let cmpd_ty = cmp_ty arr_ty in
+    let arr_len = List.length elements_nodes_list in
+    let args_fold = fun (prev_args, prev_decls) expression_node ->
+      let arg, gdecl = cmp_gexp c expression_node in
+      (prev_args @ [arg], prev_decls @ gdecl)
+    in
+    let args, gdecls = List.fold_left args_fold ([], []) elements_nodes_list in
+    let arr_sym = gensym "arr_id" in
+    let ptr_struct = Struct [ I64; Array (0, cmpd_ty) ] in
+    let arr_decl = Struct [ I64; Array (arr_len, cmpd_ty) ] in
+    let gstruct_decl = GStruct [ I64, GInt (Int64.of_int arr_len); Array (arr_len, cmpd_ty), GArray args ] in
+    ((Ptr ptr_struct, GBitcast (Ptr arr_decl, GGid arr_sym, Ptr ptr_struct)), ([(arr_sym, (arr_decl, gstruct_decl))] @ gdecls))
+  | _ -> failwith "Unable to globally declare expression. Should be Null, Bool, Int, Str, CArr"
 
 (* Oat internals function context ------------------------------------------- *)
 let internals = [

@@ -433,21 +433,21 @@ and cmp_carr (c:Ctxt.t) (ty:Ast.ty) (exp_nodes_list:exp node list) : Ll.ty * Ll.
 
   and cmp_call (c:Ctxt.t) (fname_exp_node: exp node) (fparams_exp_nodes_list: exp node list) : Ll.ty * Ll.operand * stream =
     match fname_exp_node with
-    | { elt = Id f_name; loc = _ } ->
+    | { elt = (Id f_name); loc = _ } ->
       (* Lookup function name *)
       let f_ty, f_op = Ctxt.lookup f_name c in
       (* Make sure function type is "pointer to function" *)
       begin match f_ty with
       | Ptr (Fun (args_ty, re_ty)) -> 
-        let f (args, stream) arg_to_c = 
-          let arg_ty, arg_op, arg_stream = cmp_exp c arg_to_c in
-          (args @ [arg_ty, arg_op], stream >@ arg_stream)
+        let f (prev_args, prev_stream) param = 
+          let param_ty, param_op, param_stream = cmp_exp c param in
+          (prev_args @ [(param_ty, param_op)], prev_stream >@ param_stream)
         in
         let new_args, new_stream = List.fold_left f ([], []) fparams_exp_nodes_list in
-        let call_sym = f_name ^ "_call" in
+        let call_sym = gensym (f_name ^ "_call") in
         let call_stream = [I (call_sym, Call (re_ty, f_op, new_args))] in
         (re_ty, Id call_sym, new_stream >@ call_stream)
-        | _ -> failwith "Could not compile: function type should be \"Pointer to function\""
+      | _ -> failwith "Could not compile: function type should be \"Pointer to function\""
       end
     | _ -> failwith "Invalid argument passed to function `cmp_call`"
 

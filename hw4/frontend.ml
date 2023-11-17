@@ -321,28 +321,28 @@ let cmp_id (c:Ctxt.t) (id:id) : Ll.ty * Ll.operand * stream =
 
 let convert_binop (bop:binop) (re_ty:Ll.ty) (op1:Ll.operand) (op2:Ll.operand) : insn =
   match bop with
-  | Add -> Binop (Add, re_ty, op1, op2)
-  | Sub -> Binop (Sub, re_ty, op1, op2)
-  | Mul -> Binop (Mul, re_ty, op1, op2)
-  | Eq -> Icmp (Eq, re_ty, op1, op2)
-  | Neq -> Icmp (Ne, re_ty, op1, op2)
-  | Lt -> Icmp (Slt, re_ty, op1, op2)
-  | Lte -> Icmp (Sle, re_ty, op1, op2)
-  | Gt -> Icmp (Sgt, re_ty, op1, op2)
-  | Gte -> Icmp (Sge, re_ty, op1, op2)
-  | And -> Binop (And, re_ty, op1, op2) (* UI AR NOT SCIUR *)
-  | Or -> Binop (Or, re_ty, op1, op2)   (* UI AR NOT SCIUR *)
+  | Add -> Binop  (Add, re_ty, op1, op2)
+  | Sub -> Binop  (Sub, re_ty, op1, op2)
+  | Mul -> Binop  (Mul, re_ty, op1, op2)
+  | Eq -> Icmp    (Eq, re_ty, op1, op2)
+  | Neq -> Icmp   (Ne, re_ty, op1, op2)
+  | Lt -> Icmp    (Slt, re_ty, op1, op2)
+  | Lte -> Icmp   (Sle, re_ty, op1, op2)
+  | Gt -> Icmp    (Sgt, re_ty, op1, op2)
+  | Gte -> Icmp   (Sge, re_ty, op1, op2)
+  | And -> Binop  (And, re_ty, op1, op2)  (* UI AR NOT SCIUR *)
+  | Or -> Binop   (Or, re_ty, op1, op2)   (* UI AR NOT SCIUR *)
   | IAnd -> Binop (And, re_ty, op1, op2)
-  | IOr -> Binop (Or, re_ty, op1, op2)
-  | Shl -> Binop (Shl, re_ty, op1, op2)
-  | Shr -> Binop (Lshr, re_ty, op1, op2)
-  | Sar -> Binop (Ashr, re_ty, op1, op2)
+  | IOr -> Binop  (Or, re_ty, op1, op2)
+  | Shl -> Binop  (Shl, re_ty, op1, op2)
+  | Shr -> Binop  (Lshr, re_ty, op1, op2)
+  | Sar -> Binop  (Ashr, re_ty, op1, op2)
 
 let convert_unop (uop:unop) (re_ty:Ll.ty) (op:Ll.operand) : insn = 
   match uop with
-  | Neg -> Binop (Mul, re_ty, op, Const (Int64.neg 1L))
+  | Neg -> Binop (Mul, re_ty, op, Const (-1L))
   | Lognot -> Icmp (Eq, re_ty, op, Const 0L) (* UI AR NOT SCIUR *) (* (Add, re_ty, 1L, Binop (Xor, re_ty, op, Const 0xFFFFFFFFL)) *)
-  | Bitnot -> Binop (Xor, re_ty, op, Const (Int64.neg 1L))
+  | Bitnot -> Binop (Xor, re_ty, op, Const (-1L))
 
 (* Compiles an expression exp in context c, outputting the Ll operand that will
    recieve the value of the expression, and the stream of instructions
@@ -490,7 +490,7 @@ let cmp_assn (c:Ctxt.t) (ref_exp_node:exp node) (val_exp_node:exp node) : Ctxt.t
 
 let cmp_decl (c:Ctxt.t) ((id, assn_exp_node):vdecl) : Ctxt.t * stream =
   let assn_ty, assn_operand, assn_stream = cmp_exp c assn_exp_node in
-  let decl_sym = gensym id ^ "_decl" in
+  let decl_sym = gensym (id ^ "_decl") in
   let new_c = Ctxt.add c id (Ptr assn_ty, Id decl_sym) in
   let alloca_stream = [E (decl_sym, Alloca assn_ty)] in
   let store_stream = [I (decl_sym, Store (assn_ty, assn_operand, Id decl_sym))] in
@@ -618,12 +618,13 @@ and cmp_while (c:Ctxt.t) (rt:Ll.ty) (cond_exp_node:exp node) (body_block:Ast.blo
   let while_term_br = [T (Br (cond_sym))] in
   let while_term_cbr = [T (Cbr (cond_operand, body_sym, end_sym))] in
   let while_stream = 
-    cond_lbl >@
-    cond_stream >@
-    while_term_cbr >@
+    while_term_br >@
     body_lbl >@
     body_stream >@
     while_term_br >@
+    cond_lbl >@
+    cond_stream >@
+    while_term_cbr >@
     end_lbl
   in
   (c, while_stream)

@@ -428,7 +428,7 @@ and cmp_carr (c:Ctxt.t) (ty:Ast.ty) (exp_nodes_list:exp node list) : Ll.ty * Ll.
         [I (ref_sym, Gep (ref_ty, ref_operand, [Const 0L; Const 1L; index_operand]))] >@
         [I (index_sym, Load (Ptr arr_ty, Id ref_sym))]
       in
-      (ref_ty, Id index_sym, cmp_stream)
+      (arr_ty, Id index_sym, cmp_stream)
     | _ -> failwith "Invalid syntax: Index reference compiles to non-array type"
 
   and cmp_call (c:Ctxt.t) (fname_exp_node: exp node) (fparams_exp_nodes_list: exp node list) : Ll.ty * Ll.operand * stream =

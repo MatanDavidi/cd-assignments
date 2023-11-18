@@ -250,6 +250,102 @@ let old_student_tests = [
 
 let student_tests = [] 
 
+let prefix = "./compiler-design-eth-tests/04/"
+
+let simple_tests = [
+  (prefix ^ "dbernhard/" ^ "simple_while.oat", "", "10")
+  ; (prefix ^ "dbernhard/" ^ "simple_while2.oat", "", "50") (* function return value as condition *)
+  ; (prefix ^ "dbernhard/" ^ "while_false.oat", "", "4")
+  ; (prefix ^ "dbernhard/" ^ "while_false2.oat", "", "4")
+  ; (prefix ^ "dbernhard/" ^ "array_indexing.oat", "", "205") (* various indices *)
+  ; (prefix ^ "dbernhard/" ^ "array_indexing2.oat", "", "105") (* 2d array *)
+  ; (prefix ^ "dbernhard/" ^ "length.oat", "asdf", "4") (* returns length of the first argument *)
+  ; (prefix ^ "dbernhard/" ^ "arr_of_string.oat", "abc", "98") (* returns second character as integer *)
+  ; (prefix ^ "dbernhard/" ^ "str_cat.oat", "", "hello42")
+  ; (prefix ^ "dbernhard/" ^ "str_of_arr.oat", "", "bcd0")
+  ; (prefix ^ "dbernhard/" ^ "print_bool.oat", "", "falsetruefalse5")
+  ; (prefix ^ "dbernhard/" ^ "simple_global_update.oat", "", "11")
+  ; (prefix ^ "dbernhard/" ^ "simple_global_update2.oat", "", "11") (* update of a global variable *)
+  ; (prefix ^ "dbernhard/" ^ "tests_if.oat", "", "1")
+  ; (prefix ^ "dbernhard/" ^ "tests_if2.oat", "", "1")
+  ; (prefix ^ "dbernhard/" ^ "tests_if3.oat", "", "110")
+  ; (prefix ^ "dbernhard/" ^ "tests_if4.oat", "", "60")
+  ; (prefix ^ "dbernhard/" ^ "tests_if5.oat", "", "60")
+  ; (prefix ^ "dbernhard/" ^ "tests_if6.oat", "", "65")
+  ; (prefix ^ "dbernhard/" ^ "tests_if7.oat", "", "53")
+  ; (prefix ^ "dbernhard/" ^ "tests_if8.oat", "", "50")
+  ; (prefix ^ "dbernhard/" ^ "advanced_add.oat", "", "4")
+  ; (prefix ^ "dbernhard/" ^ "count_primes_less_100.oat", "", "25")
+  ; (prefix ^ "dbernhard/" ^ "for_cond_fun.oat", "", "10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 10")
+  ; (prefix ^ "dbernhard/" ^ "for_cond_fun2.oat", "", "1, 3, 5, 7, 9, 11, b:50")
+  ; (prefix ^ "dbernhard/" ^ "mat_mult.oat", "", "11 7 13 14 3 22 4 1 5 0")
+  ; (prefix ^ "dbernhard/" ^ "mat_mult2.oat", "", "11 7 13 14 3 22 4 1 5 0")
+  ; (prefix ^ "dbernhard/" ^ "null_update.oat", "", "12")
+  ; (prefix ^ "dbernhard/" ^ "null_update_global.oat", "", "12")
+  ; (prefix ^ "dbernhard/" ^ "null_update_global2.oat", "", "12")
+  ; (prefix ^ "dbernhard/" ^ "ret_null.oat", "", "5")
+  ; (prefix ^ "dbernhard/" ^ "empty.oat", "", "5")
+  ; (prefix ^ "dbernhard/" ^ "printing.oat", "", "hello42")
+  ; (prefix ^ "dbernhard/" ^ "update_global.oat", "", "12")
+  ; (prefix ^ "dbernhard/" ^ "argc.oat", "2", "20") (* character '2' is from amount of args and second character is the return code*)
+]
+
+let easy_test = 
+  [ (prefix ^ "nicdard/" ^ "easyrun0.oat", "", "10")
+  ; (prefix ^ "nicdard/" ^ "vdecl.oat", "", "0")
+  ; (prefix ^ "nicdard/" ^ "neg.oat", "", "246")
+  ; (prefix ^ "nicdard/" ^ "return0.oat", "", "1")
+  ; (prefix ^ "nicdard/" ^ "assign.oat", "", "246")
+  ; (prefix ^ "nicdard/" ^ "while.oat", "", "0")
+  ; (prefix ^ "nicdard/" ^ "while1.oat", "", "1")
+  ; (prefix ^ "nicdard/" ^ "equality.oat", "", "1")
+  ; (prefix ^ "nicdard/" ^ "inequality.oat", "", "0")
+  ; (prefix ^ "nicdard/" ^ "greater.oat", "", "0")
+  ; (prefix ^ "nicdard/" ^ "less.oat", "", "0")
+  ; (prefix ^ "nicdard/" ^ "greatereq.oat", "", "1")
+  ; (prefix ^ "nicdard/" ^ "lesseq.oat", "", "1")
+  ; (prefix ^ "nicdard/" ^ "for.oat", "", "5")
+  ; (prefix ^ "nicdard/" ^ "and1.oat", "", "11")
+  ; (prefix ^ "nicdard/" ^ "and2.oat", "", "11")
+  ; (prefix ^ "nicdard/" ^ "or1.oat", "", "26")
+  ; (prefix ^ "nicdard/" ^ "or2.oat", "", "26")
+  ; (prefix ^ "nicdard/" ^ "call.oat", "", "10")
+  ; (prefix ^ "nicdard/" ^ "sgstring.oat", "", "0")
+  ; (prefix ^ "nicdard/" ^ "nullref.oat", "", "0")
+  ; (prefix ^ "nicdard/" ^ "shoisted.oat", "", "local string0")
+  ; (prefix ^ "nicdard/" ^ "shoisted2.oat", "", "0")
+  ; (prefix ^ "nicdard/" ^ "arglobal.oat", "", "15")
+  ; (prefix ^ "nicdard/" ^ "arglobal2.oat", "", "15")
+  ; (prefix ^ "nicdard/" ^ "arglobal3.oat", "", "10")
+  ; (prefix ^ "nicdard/" ^ "arlocal0.oat", "", "15")
+  ; (prefix ^ "nicdard/" ^ "arlocal1.oat", "", "15")
+  ; (prefix ^ "nicdard/" ^ "arlocal2.oat", "", "0")
+  ; (prefix ^ "nicdard/" ^ "arlocal3.oat", "", "3")
+  ; (prefix ^ "nicdard/" ^ "if.oat", "", "3")
+  ; (prefix ^ "nicdard/" ^ "function.oat", "", "1")
+  ; (prefix ^ "nicdard/" ^ "whileterminator1.oat", "", "10")
+  ; (prefix ^ "nicdard/" ^ "whileterminator2.oat", "", "0")
+  ]
+
+let simple_test1 = 
+  [ (prefix ^ "thbwd/" ^ "nested_return_array.oat", "", "0")
+  ; (prefix ^ "thbwd/" ^ "nested_return_bool.oat", "", "0")
+  ]
+
+let extra_tests = 
+  [
+    (prefix ^ "smithj/" ^ "scoping1.oat", "", "2");
+    (prefix ^ "smithj/" ^ "scoping2.oat", "", "0");
+    (prefix ^ "smithj/" ^ "glob_arr.oat", "\"a b c d e f g\"", "7");
+    (prefix ^ "smithj/" ^ "glob_arr.oat", "abc", "1");
+    (prefix ^ "smithj/" ^ "early_return1.oat", "", "10");
+    (prefix ^ "smithj/" ^ "early_return2.oat", "", "1");
+    (prefix ^ "smithj/" ^ "early_return3.oat", "", "10");
+    (prefix ^ "smithj/" ^ "early_loop_termin1.oat", "", "0");
+    (prefix ^ "smithj/" ^ "early_loop_termin2.oat", "", "100");
+    (prefix ^ "smithj/" ^ "early_loop_termin3.oat", "", "10");
+  ]
+
 let tests : suite =
   [ GradedTest("parse tests", 15, parse_tests);
     GradedTest("easiest tests", 15, executed_oat_file easiest_tests);
@@ -259,6 +355,10 @@ let tests : suite =
     GradedTest("medium tests", 10, executed_oat_file medium_tests);
     GradedTest("hard tests", 10, executed_oat_file (hard_tests @ old_student_tests));
     GradedTest("hidden tests", 20, executed_oat_file student_tests);
+    GradedTest("dbernhard tests", 0, executed_oat_file simple_tests);
+    GradedTest("nicdard tests", 0, executed_oat_file easy_test);
+    GradedTest("thbwd tests", 0, executed_oat_file simple_test1);
+    GradedTest("smithj tests", 0, executed_oat_file extra_tests);
   ]
 
 let graded_tests : suite = tests

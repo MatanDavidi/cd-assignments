@@ -632,11 +632,10 @@ and cmp_while (c:Ctxt.t) (rt:Ll.ty) (cond_exp_node:exp node) (body_block:Ast.blo
 and cmp_for (c:Ctxt.t) (rt:Ll.ty) (vdecls:vdecl list) (cond_exp_node_opt:exp node option) (update_stmt_node_opt:stmt node option) (body_stmt_nodes_list:Ast.block) : Ctxt.t * stream = 
   (* Function cmp_vdecls is missing, so we create our own *)
   let vdecl_f = 
-    begin 
-      fun (prev_c, prev_stream) (vdecl) -> 
-        let curr_c, curr_stream = cmp_decl prev_c vdecl in
-        (curr_c, prev_stream >@ curr_stream)
-    end in
+    fun (prev_c, prev_stream) (vdecl) -> 
+      let curr_c, curr_stream = cmp_decl c vdecl in
+      (curr_c, prev_stream >@ curr_stream)
+  in
   let vdecl_c, vdecl_stream = List.fold_left vdecl_f (c, []) vdecls in
   let cond_exp = match cond_exp_node_opt with
   | None -> { elt = CBool true; loc = Range.norange }
@@ -647,7 +646,7 @@ and cmp_for (c:Ctxt.t) (rt:Ll.ty) (vdecls:vdecl list) (cond_exp_node_opt:exp nod
   | Some update_stmt -> body_stmt_nodes_list @ [update_stmt]
   in
   let while_stmt = While (cond_exp, body_stmts) in
-  let res_c, res_stream = cmp_stmt c rt { elt = while_stmt; loc = Range.norange } in
+  let res_c, res_stream = cmp_stmt vdecl_c rt { elt = while_stmt; loc = Range.norange } in
   (c, vdecl_stream >@ res_stream)
 
 (* Compile a series of statements *)

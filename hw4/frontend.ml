@@ -550,12 +550,12 @@ let rec cmp_stmt (c:Ctxt.t) (rt:Ll.ty) (stmt:Ast.stmt node) : Ctxt.t * stream =
 
 and cmp_if (c:Ctxt.t) (rt:Ll.ty) (cond_exp_node:exp node) (true_stmt_nodes_list:stmt node list) (false_stmt_nodes_list:stmt node list) =
 let cond_ty, cond_operand, cond_stream = cmp_exp c cond_exp_node in
-(* let f = fun (prev_c, prev_stream) curr_stmt -> 
+let f = fun (prev_c, prev_stream) curr_stmt -> 
   let (curr_c, curr_stream) = cmp_stmt prev_c rt curr_stmt in
   (curr_c, prev_stream >@ curr_stream)
-in *)
-let (true_context, true_stream) =   cmp_block c rt true_stmt_nodes_list in (* List.fold_left f (c, []) true_stmt_nodes_list in *)
-let (false_context, false_stream) = cmp_block true_context rt false_stmt_nodes_list in (* List.fold_left f (true_context, []) false_stmt_nodes_list in *)
+in
+let (true_context, true_stream) =   List.fold_left f (c, []) true_stmt_nodes_list in (* List.fold_left f (c, []) true_stmt_nodes_list in *)
+let (false_context, false_stream) = List.fold_left f (true_context, []) false_stmt_nodes_list in (* List.fold_left f (true_context, []) false_stmt_nodes_list in *)
 let if_sym = gensym "if" in
 let if_lbl = [L if_sym] in
 let then_sym = gensym "then" in
@@ -568,8 +568,16 @@ let if_term = [T (Br if_sym)] in
 let end_if_term = [T (Br end_if_sym)] in
 let if_cbr_term = [T (Cbr (cond_operand, then_sym, else_sym))] in
 let else_cbr_term = [T (Cbr (cond_operand, then_sym, end_if_sym))] in
-let true_term = match true_stream with | [] -> [] | (i :: _) -> [i] in
-let false_term = match false_stream with | [] -> [] | (i :: _) -> [i] in
+let true_term = 
+  match true_stream with 
+  | [] -> [] 
+  | (i :: _) -> [i] 
+in
+let false_term = 
+  match false_stream with 
+  | [] -> [] 
+  | (i :: _) -> [i] 
+in
 (* If both blocks end in a return, adjust overall return *)
 let ret_stream = 
   match (true_term, false_term) with
@@ -602,9 +610,9 @@ let if_no_else_stream =
   end_if_lbl >@
   ret_stream in
 if false_stream = [] then
-  (c, if_stream)
-else
   (c, if_no_else_stream)
+else
+  (c, if_stream)
 
 and cmp_while (c:Ctxt.t) (rt:Ll.ty) (cond_exp_node:exp node) (body_block:Ast.block) : Ctxt.t * stream =
   let cond_ty, cond_operand, cond_stream = cmp_exp c cond_exp_node in

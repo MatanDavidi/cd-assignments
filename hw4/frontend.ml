@@ -641,7 +641,7 @@ and cmp_for (c:Ctxt.t) (rt:Ll.ty) (vdecls:vdecl list) (cond_exp_node_opt:exp nod
   (* Function cmp_vdecls is missing, so we create our own *)
   let vdecl_f = 
     fun (prev_c, prev_stream) (vdecl) -> 
-      let curr_c, curr_stream = cmp_decl c vdecl in
+      let curr_c, curr_stream = cmp_decl prev_c vdecl in
       (curr_c, prev_stream >@ curr_stream)
   in
   let vdecl_c, vdecl_stream = List.fold_left vdecl_f (c, []) vdecls in

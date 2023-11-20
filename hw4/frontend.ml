@@ -330,8 +330,8 @@ let convert_binop (bop:binop) (re_ty:Ll.ty) (op1:Ll.operand) (op2:Ll.operand) : 
   | Lte -> Icmp   (Sle, re_ty, op1, op2)
   | Gt -> Icmp    (Sgt, re_ty, op1, op2)
   | Gte -> Icmp   (Sge, re_ty, op1, op2)
-  | And -> Binop  (And, re_ty, op1, op2)  (* UI AR NOT SCIUR *)
-  | Or -> Binop   (Or, re_ty, op1, op2)   (* UI AR NOT SCIUR *)
+  | And -> Binop  (And, re_ty, op1, op2)
+  | Or -> Binop   (Or, re_ty, op1, op2)
   | IAnd -> Binop (And, re_ty, op1, op2)
   | IOr -> Binop  (Or, re_ty, op1, op2)
   | Shl -> Binop  (Shl, re_ty, op1, op2)
@@ -341,7 +341,7 @@ let convert_binop (bop:binop) (re_ty:Ll.ty) (op1:Ll.operand) (op2:Ll.operand) : 
 let convert_unop (uop:unop) (re_ty:Ll.ty) (op:Ll.operand) : insn = 
   match uop with
   | Neg -> Binop (Mul, re_ty, op, Const (-1L))
-  | Lognot -> Icmp (Eq, re_ty, op, Const 0L) (* UI AR NOT SCIUR *) (* (Add, re_ty, 1L, Binop (Xor, re_ty, op, Const 0xFFFFFFFFL)) *)
+  | Lognot -> Icmp (Eq, re_ty, op, Const 0L)
   | Bitnot -> Binop (Xor, re_ty, op, Const (-1L))
 
 (* Compiles an expression exp in context c, outputting the Ll operand that will
@@ -494,8 +494,7 @@ let cmp_decl (c:Ctxt.t) ((id, assn_exp_node):vdecl) : Ctxt.t * stream =
   let new_c = Ctxt.add c id (Ptr assn_ty, Id decl_sym) in
   let alloca_stream = [E (decl_sym, Alloca assn_ty)] in
   let store_stream = [I (decl_sym, Store (assn_ty, assn_operand, Id decl_sym))] in
-  (* TODO: Check if order of streams is correct? *)
-  (new_c, assn_stream >@ alloca_stream >@ store_stream)
+  (new_c, alloca_stream >@ assn_stream >@ store_stream)
 
 let cmp_ret (c:Ctxt.t) (opt:exp node option) : Ctxt.t * stream =
   match opt with
@@ -776,7 +775,12 @@ let cmp_fdecl (c:Ctxt.t) (f:Ast.fdecl node) : Ll.fdecl * (Ll.gid * Ll.gdecl) lis
   let args =  f.elt.args in 
   let newctxt, newstrm = streamgen c [] args in
   let _, block = cmp_block newctxt (cmp_ret_ty return) f.elt.body in
-  let cfg, gvars = cfg_of_stream (newstrm >@ block) in
+  let term = 
+    match return with
+    | RetVoid -> [T (Ret (Void, None))]
+    | _ -> []
+  in
+  let cfg, gvars = cfg_of_stream (newstrm >@ block >@ term) in
   let func = (List.map typer args, cmp_ret_ty return) in 
   let param = List.map typer1 args in 
   ({f_ty=func; f_param=param; f_cfg=cfg}, gvars)

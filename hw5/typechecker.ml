@@ -70,6 +70,7 @@ and subtype_ref (c : Tctxt.t) (t1 : Ast.rty) (t2 : Ast.rty) : bool =
   | RFun (x, y), RFun (x', y') -> List.length x = List.length x' && List.for_all2 (subtype c) x x' && subtype_retty c y y'
   | _ -> false
 
+(* Decides whether H |-rt rt1 <: rt2 *)
 and subtype_retty (c : Tctxt.t) (t1 : Ast.ret_ty) (t2 : Ast.ret_ty) : bool = 
   match t1, t2 with
   | RetVoid, RetVoid -> true
@@ -92,7 +93,25 @@ and subtype_retty (c : Tctxt.t) (t1 : Ast.ret_ty) (t2 : Ast.ret_ty) : bool =
     - tc contains the structure definition context
  *)
 let rec typecheck_ty (l : 'a Ast.node) (tc : Tctxt.t) (t : Ast.ty) : unit =
-  failwith "todo: implement typecheck_ty"
+  match t with
+  | TInt -> ()
+  | TBool -> ()
+  | TRef x -> typecheck_ref l tc x
+  | TNullRef x -> typecheck_ref l tc x
+  | _ -> type_error l "Invalid"
+
+and typecheck_ref (l : 'a Ast.node) (tc : Tctxt.t) (t : Ast.rty) : unit =
+  match t with
+  | RString -> ()
+  | RArray x -> typecheck_ty l tc x
+  | RStruct x -> if Tctxt.lookup_struct_option x tc = None then type_error l "Invalid" else ()
+  | RFun (x, y) -> List.iter (typecheck_ty l tc) x; typecheck_retty l tc y 
+  | _ -> type_error l "Invalid"
+
+and typecheck_retty (l : 'a Ast.node) (tc : Tctxt.t) (t : Ast.ret_ty) : unit =
+  match t with
+  | RetVoid -> ()
+  | RetVal x -> typecheck_ty l tc x
 
 (* typechecking expressions ------------------------------------------------- *)
 (* Typechecks an expression in the typing context c, returns the type of the

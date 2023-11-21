@@ -47,11 +47,33 @@ let typ_of_unop : Ast.unop -> Ast.ty * Ast.ty = function
       (Don't forget about OCaml's 'and' keyword.)
 *)
 let rec subtype (c : Tctxt.t) (t1 : Ast.ty) (t2 : Ast.ty) : bool =
-  failwith "todo: subtype"
+  match t1, t2 with
+  | TInt, TInt -> true
+  | TBool, TBool -> true
+  | TNullRef x, TNullRef y -> subtype_ref c x y
+  | TRef x, TNullRef y -> subtype_ref c x y
+  | TRef x, TRef y -> subtype_ref c x y
+  | _ -> false
 
 (* Decides whether H |-r ref1 <: ref2 *)
 and subtype_ref (c : Tctxt.t) (t1 : Ast.rty) (t2 : Ast.rty) : bool =
-  failwith "todo: subtype_ref"
+  match t1, t2 with
+  | RString, RString -> true
+  | RArray x, RArray y -> subtype c x y
+  | RStruct x, RStruct y -> 
+    let second = Tctxt.lookup_struct y c in
+    List.for_all (fun second -> let n = second.fieldName in let y = second.ftyp in
+      match lookup_field_option x n c with
+      | Some x -> subtype c x y
+      | None -> false
+      ) second
+  | RFun (x, y), RFun (x', y') -> List.length x = List.length x' && List.for_all2 (subtype c) x x' && subtype_retty c y y'
+  | _ -> false
+
+and subtype_retty (c : Tctxt.t) (t1 : Ast.ret_ty) (t2 : Ast.ret_ty) : bool = 
+  match t1, t2 with
+  | RetVoid, RetVoid -> true
+  | RetVal x, RetVal y -> subtype c x y
 
 
 (* well-formed types -------------------------------------------------------- *)

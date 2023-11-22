@@ -138,8 +138,105 @@ and typecheck_retty (l : 'a Ast.node) (tc : Tctxt.t) (t : Ast.ret_ty) : unit =
    a=1} is well typed.  (You should sort the fields to compare them.)
 
 *)
+
+let binop_ty = function
+  | Add -> (TInt, TInt, TInt)
+  | Sub -> (TInt, TInt, TInt)
+  | Mul -> (TInt, TInt, TInt)
+  | Lt  -> (TInt, TInt, TBool)
+  | Lte  -> (TInt, TInt, TBool)
+  | Gt  -> (TInt, TInt, TBool)
+  | Gte  -> (TInt, TInt, TBool)
+  | Eq  -> (TInt, TInt, TBool)
+  | Neq  -> (TInt, TInt, TBool)
+  | And -> (TBool, TBool, TBool)
+  | Or  -> (TBool, TBool, TBool)
+  | IAnd -> (TInt, TInt, TInt)
+  | IOr -> (TInt, TInt, TInt)
+  | Shl -> (TInt, TInt, TInt)
+  | Shr -> (TInt, TInt, TInt)
+  | Sar -> (TInt, TInt, TInt)
+
+let unop_ty = function
+  | Neg -> (TInt, TInt)
+  | Lognot -> (TBool, TBool)
+  | Bitnot -> (TInt, TInt)
+
+let converter = function
+  | Ast.RetVoid -> failwith "Cannot convert RetVoid to ty"
+  | Ast.RetVal ty -> ty
+
 let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
-  failwith "todo: implement typecheck_exp"
+  match e.elt with
+  | CNull x -> typecheck_ref e c x; TNullRef x
+  | CBool _ -> TBool
+  | CInt _ -> TInt
+  | CStr _ -> TRef RString
+  | Id x -> begin try Tctxt.lookup_local x c with Not_found -> Tctxt.lookup_global x c end
+  | CArr (x,y) -> let ty' = typecheck_ty e c x in
+    List.iter (fun t -> let ty = typecheck_exp c t in
+    if not (subtype c ty x) then type_error t "Array element type does not match array type") y; TRef (RArray x)
+  | NewArr (ty, x, y, z) ->
+    let ty' = typecheck_ty e c ty in
+    let ty'' = typecheck_exp c x in
+    if not (subtype c ty'' TInt) then
+    type_error x "Array size expression must be of type int";
+    let ty''' = typecheck_exp (Tctxt.add_local c y TInt) z in
+    if not (subtype c ty''' ty) then
+    type_error z "Array initialization expression type does not match array type"; TRef (RArray ty)
+  | Index (x, y) -> 
+    let ty = typecheck_exp c x in
+    let ty' = typecheck_exp c y in
+    if not (subtype c ty' TInt) then type_error y "Array index must be of type int";
+    begin match ty with
+    | TRef (RArray x) -> x
+    | _ -> type_error x "Invalid"
+    end
+  | Length x -> 
+    let ty = typecheck_exp c x in
+    begin match ty with
+    | TRef (RArray _) -> TInt
+    | _ -> type_error x "Invalid"
+    end
+  | CStruct (x, y) ->
+    let ty = Tctxt.lookup_global x c in
+    List.iter (fun (id, exp) ->
+    let field_ty = typecheck_exp c exp in
+    if not (subtype c field_ty (lookup_field x id c)) then
+    type_error exp "Field type does not match struct field type") y; TRef (RStruct x)
+  | Proj (x, y) ->
+    let ty = typecheck_exp c x in
+    begin match ty with
+    | TRef (RStruct z) -> lookup_field z y c
+    | _ -> type_error x "Invalid"
+    end
+  | Call (x, y) ->
+    let ty = typecheck_exp c x in
+    begin match ty with
+    | TRef (RFun (arg_tys, ret_ty)) ->
+      List.iter2 (fun arg arg_ty ->
+        let arg_ty' = typecheck_exp c arg in
+        if not (subtype c arg_ty' arg_ty) then
+        type_error arg "Argument type does not match function parameter type"
+      ) y arg_tys; converter ret_ty
+    | _ -> type_error x "Call operation is only valid on functions"
+    end
+  | Bop (x, y, z) ->
+    let ty = typecheck_exp c y in
+    let ty' = typecheck_exp c z in
+    typecheck_binop c e x ty ty'
+  | Uop (x, y) ->
+    let ty = typecheck_exp c y in
+    typecheck_unop c e x ty
+
+and typecheck_binop (c : Tctxt.t) (e : Ast.exp node) (x : Ast.binop) (ty : Ast.ty) (ty' : Ast.ty) : Ast.ty =
+  let (ty1, ty2, ty3) = binop_ty x in
+  if not (subtype c ty ty1) then type_error e "Invalid";
+  if not (subtype c ty' ty2) then type_error e "Invalid"; ty3
+
+and typecheck_unop (c : Tctxt.t) (e : Ast.exp node) (x : Ast.unop) (ty : Ast.ty) : Ast.ty =
+  let (ty1, ty2) = unop_ty x in
+  if not (subtype c ty ty1) then type_error e "Invalid"; ty2
 
 (* statements --------------------------------------------------------------- *)
 

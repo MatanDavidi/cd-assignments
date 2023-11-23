@@ -335,7 +335,7 @@ let create_struct_ctxt (p:Ast.prog) : Tctxt.t =
       | Gtdecl { elt = added_ctxt ; _} -> 
         let decl_id = (fst added_ctxt) in
         if Tctxt.lookup_struct_option decl_id prev_ctxt <> None then 
-          raise (TypeError ("Duplicate struct name " ^ decl_id))
+          raise (TypeError ("Duplicate struct definition " ^ decl_id))
         else
           let fields = (snd added_ctxt) in
           let appended_ctxt = Tctxt.add_struct prev_ctxt decl_id fields in
@@ -346,7 +346,21 @@ let create_struct_ctxt (p:Ast.prog) : Tctxt.t =
   final_ctxt
 
 let create_function_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
-  failwith "todo: create_function_ctxt"
+  let fold_func = 
+    fun (prev_ctxt:Tctxt.t) (d:decl) : Tctxt.t -> 
+      match d with
+      | Gfdecl { elt = decl ; _} -> 
+        if Tctxt.lookup_global_option decl.fname prev_ctxt <> None then 
+          raise (TypeError ("Duplicate function definition " ^ decl.fname))
+        else
+          begin match decl.frtyp with
+          | RetVal ty -> Tctxt.add_global prev_ctxt decl.fname (TRef (RFun (List.map fst decl.args, RetVal ty)))
+          | RetVoid -> Tctxt.add_global prev_ctxt decl.fname (TRef (RFun (List.map fst decl.args, RetVoid)))
+          end
+      | _ -> prev_ctxt
+  in
+  let final_ctxt = List.fold_left fold_func tc p in
+  final_ctxt
 
 let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
   failwith "todo: create_function_ctxt"

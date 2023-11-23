@@ -139,29 +139,6 @@ and typecheck_retty (l : 'a Ast.node) (tc : Tctxt.t) (t : Ast.ret_ty) : unit =
 
 *)
 
-let binop_ty = function
-  | Add -> (TInt, TInt, TInt)
-  | Sub -> (TInt, TInt, TInt)
-  | Mul -> (TInt, TInt, TInt)
-  | Lt  -> (TInt, TInt, TBool)
-  | Lte  -> (TInt, TInt, TBool)
-  | Gt  -> (TInt, TInt, TBool)
-  | Gte  -> (TInt, TInt, TBool)
-  | Eq  -> (TInt, TInt, TBool)
-  | Neq  -> (TInt, TInt, TBool)
-  | And -> (TBool, TBool, TBool)
-  | Or  -> (TBool, TBool, TBool)
-  | IAnd -> (TInt, TInt, TInt)
-  | IOr -> (TInt, TInt, TInt)
-  | Shl -> (TInt, TInt, TInt)
-  | Shr -> (TInt, TInt, TInt)
-  | Sar -> (TInt, TInt, TInt)
-
-let unop_ty = function
-  | Neg -> (TInt, TInt)
-  | Lognot -> (TBool, TBool)
-  | Bitnot -> (TInt, TInt)
-
 let converter = function
   | Ast.RetVoid -> failwith "Cannot convert RetVoid to ty"
   | Ast.RetVal ty -> ty
@@ -222,21 +199,32 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     | _ -> type_error x "Call operation is only valid on functions"
     end
   | Bop (x, y, z) ->
-    let ty = typecheck_exp c y in
-    let ty' = typecheck_exp c z in
-    typecheck_binop c e x ty ty'
+    begin match x with
+    |Eq | Neq -> 
+      let ty = typecheck_exp c y in
+      let ty' = typecheck_exp c z in
+      if not (subtype c ty ty') || not (subtype c ty' ty) then type_error e "Invalid"; TBool
+    | Add | Mul | Sub | Shl | Sar | Shl | IAnd | IOr -> 
+      let ty = typecheck_exp c y in 
+      let ty' = typecheck_exp c y in
+      if not (subtype c ty TInt) || not (subtype c ty' TInt) then type_error e "Invalid"; TInt
+    | Lt | Lte | Gt | Gte -> 
+      let ty = typecheck_exp c y in
+      let ty' = typecheck_exp c y in
+      if not (subtype c ty TInt) || not (subtype c ty' TInt) then type_error e "Invalid"; TBool
+    | And | Or -> 
+      let ty = typecheck_exp c y in
+      let ty' = typecheck_exp c y in
+      if not (subtype c ty TBool) || not (subtype c ty' TBool) then type_error e "Invalid"; TBool
+      end
   | Uop (x, y) ->
-    let ty = typecheck_exp c y in
-    typecheck_unop c e x ty
-
-and typecheck_binop (c : Tctxt.t) (e : Ast.exp node) (x : Ast.binop) (ty : Ast.ty) (ty' : Ast.ty) : Ast.ty =
-  let (ty1, ty2, ty3) = binop_ty x in
-  if not (subtype c ty ty1) then type_error e "Invalid";
-  if not (subtype c ty' ty2) then type_error e "Invalid"; ty3
-
-and typecheck_unop (c : Tctxt.t) (e : Ast.exp node) (x : Ast.unop) (ty : Ast.ty) : Ast.ty =
-  let (ty1, ty2) = unop_ty x in
-  if not (subtype c ty ty1) then type_error e "Invalid"; ty2
+    match x with
+    | Neg | Bitnot -> 
+      let ty = typecheck_exp c y in
+      if not (subtype c ty TInt) then type_error e "Invalid"; TInt
+    | Lognot -> 
+      let ty = typecheck_exp c y in
+      if not (subtype c ty TBool) then type_error e "Invalid"; TBool
 
 (* statements --------------------------------------------------------------- *)
 
@@ -271,8 +259,53 @@ and typecheck_unop (c : Tctxt.t) (e : Ast.exp node) (x : Ast.unop) (ty : Ast.ty)
    - You will probably find it convenient to add a helper function that implements the 
      block typecheck rules.
 *)
+
+let rec lhs_id = function
+  | Id x -> x
+  | Proj (x, y) -> lhs_id x.elt
+  | Index (x, y) -> lhs_id x.elt
+  | _ -> failwith "Invalid"
+
+let exist_local (x : Ast.id) (tc : Tctxt.t) : bool =
+  match Tctxt.lookup_local_option x tc with
+  | None -> false
+  | Some x -> true
+
+let exist_global (x : Ast.id) (tc : Tctxt.t) : bool =
+  match Tctxt.lookup_global_option x tc with
+  | None -> false
+  | Some x -> true
+  
 let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.t * bool =
-  failwith "todo: implement typecheck_stmt"
+  match s.elt with
+  | Assn (x, y) -> 
+    let lhs = lhs_id x.elt in
+    if not (exist_local lhs tc || not (exist_local lhs tc)) then type_error s "Invalid assignment";
+    let ty1 = typecheck_exp tc x in
+    let ty2 = typecheck_exp tc y in
+    if not (subtype tc ty2 ty1) then type_error s "Invalid assignment"; (tc, false)
+  | Decl (id, e) ->
+    let ty = typecheck_exp tc e in
+    let tc' = add_local tc id ty in
+    if exist_local id tc then type_error s "Invalid declaration"; (tc', false)
+  | Ret e -> 
+    begin match e with
+    | Some e -> let ty = typecheck_exp tc e in
+      if not (subtype_retty tc (RetVal ty) to_ret) then type_error s "Invalid return"; (tc, true)
+    | None -> if not (subtype_retty tc RetVoid to_ret) then type_error s "Invalid return"; (tc, true)
+    end
+  | SCall (x, y) -> 
+    let ty = typecheck_exp tc x in
+    begin match ty with
+    | TRef (RFun (arg_tys, ret_ty)) ->
+      List.iter2 (fun arg arg_ty ->
+        let arg_ty' = typecheck_exp tc arg in
+        if not (subtype tc arg_ty' arg_ty) then
+        type_error arg "Argument type does not match function parameter type"
+      ) y arg_tys; (tc, false)
+    | _ -> type_error x "Call operation is only valid on functions"
+    end
+  | _ -> failwith "todo: implement other statement types"
 
 
 (* struct type declarations ------------------------------------------------- *)

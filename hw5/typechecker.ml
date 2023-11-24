@@ -144,16 +144,33 @@ let converter = function
   | Ast.RetVal ty -> ty
 
 let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
+  (* print_endline "Il pota"; *)
   match e.elt with
-  | CNull x -> typecheck_ref e c x; TNullRef x
-  | CBool _ -> TBool
-  | CInt _ -> TInt
-  | CStr _ -> TRef RString
-  | Id x -> begin try Tctxt.lookup_local x c with Not_found -> Tctxt.lookup_global x c end
+  | CNull x -> 
+    (* print_endline "Bella bra"; *)
+    typecheck_ref e c x; TNullRef x
+  | CBool _ -> 
+    (* print_endline "Bella bre"; *)
+    TBool
+  | CInt _ -> 
+    (* print_endline "Bella bri"; *)
+    TInt
+  | CStr _ -> 
+    (* print_endline "Bella bro"; *)
+    TRef RString
+  | Id x -> 
+    (* print_endline "Il doggo"; *)
+    let id_opt = Tctxt.lookup_option x c in
+    (* print_endline "L'altro doggo"; *)
+    begin match id_opt with
+    | None -> type_error e ("Undefined Identifier " ^ x)
+    | Some ty -> ty
+    end
   | CArr (x,y) -> let ty' = typecheck_ty e c x in
     List.iter (fun t -> let ty = typecheck_exp c t in
     if not (subtype c ty x) then type_error t "Array element type does not match array type") y; TRef (RArray x)
   | NewArr (ty, x, y, z) ->
+    (* print_endline "Bella cane"; *)
     let ty' = typecheck_ty e c ty in
     let ty'' = typecheck_exp c x in
     if not (subtype c ty'' TInt) then
@@ -162,6 +179,7 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     if not (subtype c ty''' ty) then
     type_error z "Array initialization expression type does not match array type"; TRef (RArray ty)
   | Index (x, y) -> 
+    (* print_endline "Bella cana"; *)
     let ty = typecheck_exp c x in
     let ty' = typecheck_exp c y in
     if not (subtype c ty' TInt) then type_error y "Array index must be of type int";
@@ -170,24 +188,42 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     | _ -> type_error x "Invalid"
     end
   | Length x -> 
+    (* print_endline "Bella cuno"; *)
     let ty = typecheck_exp c x in
     begin match ty with
     | TRef (RArray _) -> TInt
     | _ -> type_error x "Invalid"
     end
   | CStruct (x, y) ->
-    let ty = Tctxt.lookup_global x c in
+    (* print_endline "Bella Cuneo"; *)
+    (* let ty = Tctxt.lookup_global x c in *)
+    (* print_endline "MA SEI CERTO?!?!"; *)
     List.iter (fun (id, exp) ->
     let field_ty = typecheck_exp c exp in
-    if not (subtype c field_ty (lookup_field x id c)) then
+    let field_opt_ty = lookup_field_option x id c in
+    let declared_field_ty = 
+      begin match field_opt_ty with
+      | None -> type_error e ("Undefined field " ^ id ^ " in struct type " ^ x)
+      | Some ty -> ty
+      end
+    in
+    if not (subtype c field_ty declared_field_ty) then
     type_error exp "Field type does not match struct field type") y; TRef (RStruct x)
   | Proj (x, y) ->
+    (* print_endline "Bella Allola"; *)
     let ty = typecheck_exp c x in
+    (* print_endline "ALloal andata"; *)
     begin match ty with
-    | TRef (RStruct z) -> lookup_field z y c
+    | TRef (RStruct z) -> 
+      let field_op = lookup_field_option z y c in
+      begin match field_op with
+      | None -> type_error e ("Undefined field " ^ y ^ " in struct " ^ z)
+      | Some ty -> ty
+      end
     | _ -> type_error x "Invalid"
     end
   | Call (x, y) ->
+    (* print_endline "Bella Champagna"; *)
     let ty = typecheck_exp c x in
     begin match ty with
     | TRef (RFun (arg_tys, ret_ty)) ->
@@ -199,6 +235,7 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     | _ -> type_error x "Call operation is only valid on functions"
     end
   | Bop (x, y, z) ->
+    (* print_endline "Bella Castagna"; *)
     begin match x with
     |Eq | Neq -> 
       let ty = typecheck_exp c y in
@@ -218,6 +255,7 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
       if not (subtype c ty TBool) || not (subtype c ty' TBool) then type_error e "Invalid"; TBool
     end
   | Uop (x, y) ->
+    (* print_endline "Bella Brucdo"; *)
     match x with
     | Neg | Bitnot -> 
       let ty = typecheck_exp c y in
@@ -277,24 +315,31 @@ let exist_global (x : Ast.id) (tc : Tctxt.t) : bool =
   | Some x -> true
   
 let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.t * bool =
+  (* print_endline "I'm in (typecheck_stmt)"; *)
   match s.elt with
   | Assn (x, y) -> 
+    (* print_endline "A"; *)
     let lhs = lhs_id x.elt in
     if not (exist_local lhs tc || not (exist_local lhs tc)) then type_error s "Invalid assignment";
     let ty1 = typecheck_exp tc x in
     let ty2 = typecheck_exp tc y in
     if not (subtype tc ty2 ty1) then type_error s "Invalid assignment"; (tc, false)
   | Decl (id, e) ->
+    (* print_endline "B"; *)
     let ty = typecheck_exp tc e in
+    (* print_endline "I polish up real"; *)
     let tc' = add_local tc id ty in
+    (* print_endline "Nice :)"; *)
     if exist_local id tc then type_error s "Invalid declaration"; (tc', false)
   | Ret e -> 
+    (* print_endline "C"; *)
     begin match e with
     | Some e -> let ty = typecheck_exp tc e in
       if not (subtype_retty tc (RetVal ty) to_ret) then type_error s "Invalid return"; (tc, true)
     | None -> if not (subtype_retty tc RetVoid to_ret) then type_error s "Invalid return"; (tc, true)
     end
   | SCall (x, y) -> 
+    (* print_endline "D"; *)
     let ty = typecheck_exp tc x in
     begin match ty with
     | TRef (RFun (arg_tys, ret_ty)) ->
@@ -306,6 +351,7 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     | _ -> type_error x "Call operation is only valid on functions"
     end
   | If (x, y, z) -> 
+    (* print_endline "E"; *)
     let ty = typecheck_exp tc x in
     if not (subtype tc ty TBool) then type_error x "If condition must be of type bool";
     let (_, ret) = typecheck_blk tc y to_ret in
@@ -319,6 +365,7 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
         }
     *)
   | Cast (re_ty, id, exp, then_stmt_nodes, else_stmt_nodes) -> 
+    (* print_endline "F"; *)
     (* Get type of exp *)
     let exp_ty = typecheck_exp tc exp in
     (* Get `ref` part of type `ref?` *)
@@ -335,10 +382,12 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
       let (tc'', is_else_valid) = typecheck_blk tc' else_stmt_nodes to_ret in
       (tc'', is_then_valid && is_else_valid)
   | While (x, y) -> 
+    (* print_endline "G"; *)
     let ty = typecheck_exp tc x in
     if not (subtype tc ty TBool) then type_error x "While condition must be of type bool";
     let (_, ret) = typecheck_blk tc y to_ret in (tc, false)
   | For (x, y, z, w) -> 
+    (* print_endline "H"; *)
     let tc' = List.fold_left (fun tc vdecl -> typecheck_vdecl tc vdecl) tc x in
     let _ = match y with
     | Some exp -> 
@@ -354,10 +403,14 @@ and typecheck_blk (tc : Tctxt.t) (stmts : stmt node list) (to_ret : ret_ty) =
   match stmts with
   | [] -> (tc, false)
   | [stmt] -> 
+    (* print_endline "Typechecking stmt"; *)
     let (tc', ret) = typecheck_stmt tc stmt to_ret in
+    (* print_endline "Typechecked stmt"; *)
     if not ret then type_error stmt "Last statement in a block must return a value"; (tc', ret)
   | stmt :: rest ->
+    (* print_endline "Typechecking stmt"; *)
     let (tc', ret) = typecheck_stmt tc stmt to_ret in
+    (* print_endline "Typechecked stmt"; *)
     if ret then type_error stmt "Only the last statement in a block can return a value";
     typecheck_blk tc' rest to_ret
 
@@ -405,6 +458,7 @@ let typecheck_fdecl (tc : Tctxt.t) (f : Ast.fdecl) (l : 'a Ast.node) : unit =
     (* NOTE FOR NOAH: Se tolgo questo blocco (prox. 4 righe), sblocchiamo 27 test in più :) *)
     let block = f.body in
     let tc' = List.fold_left (fun x (y, z) -> Tctxt.add_local x z y) tc args in
+    (* print_endline "Compiling block"; *)
     let (_, x) = typecheck_blk tc' block frtyp in 
     if not x then type_error l "Function must return" else ()
 

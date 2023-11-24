@@ -396,7 +396,65 @@ let create_function_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
   final_ctxt
 
 let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
-  failwith "todo: create_function_ctxt"
+  let fold_func = 
+    fun (prev_ctxt:Tctxt.t) (d:decl) : Tctxt.t -> 
+      match d with
+      | Gvdecl { elt = decl ; _} -> 
+        if Tctxt.lookup_global_option decl.name prev_ctxt <> None then 
+          raise (TypeError ("Duplicate global value definition " ^ decl.name))
+        else
+          let ty = 
+          begin match decl.init.elt with
+          | CNull rty -> (TNullRef rty)
+          | CBool _ -> TBool
+          | CInt _ | Bop (_, _, _) -> TInt
+          | CStr _ -> TRef RString
+          | Id id -> 
+            let looked_up_id = Tctxt.lookup_global_option id prev_ctxt in
+            begin match looked_up_id with
+              | Some ty -> ty
+              | _ -> raise (TypeError ("Undefined symbol " ^ id))
+            end
+          | CArr (ty, _) -> TRef (RArray ty)
+          | NewArr (ty, _, _, _) -> TRef (RArray ty)
+          | Index (arr_exp_node, _) -> 
+            let arr_ty = typecheck_exp prev_ctxt arr_exp_node in
+            (* If `arr : ty[]` and `i : int`, then `arr[i] : ty` *)
+            begin match arr_ty with
+            | TRef (RArray ty) -> ty
+            | _ -> type_error arr_exp_node decl.name
+            end
+          | Length _ -> TInt
+          | CStruct (id, []) -> raise (TypeError ("Cannot initialize var " ^ decl.name ^ " to empty struct " ^ id))
+          | CStruct (_, e::_) -> typecheck_exp prev_ctxt (snd e)
+          | Proj (struct_exp_node, id) ->
+            begin match struct_exp_node.elt with
+            (* s.id is only valid if `s` is a struct type, and `id` is found inside `struct s` declaration *)
+            | CStruct (s_name, _) -> 
+              let field = lookup_field_option s_name id prev_ctxt in
+              begin match field with
+              | None -> type_error struct_exp_node id
+              | Some ty -> ty
+              end
+            | _ -> type_error struct_exp_node id
+            end
+          | Call (f_exp, _) -> 
+            let f_type = typecheck_exp prev_ctxt f_exp in
+            begin match f_type with
+            | TRef (RFun (_, RetVal ty)) -> ty
+            | _ -> raise (TypeError "Could not get return type of function call")
+            end
+          | Uop (unop, _) -> 
+            begin match unop with
+            | Neg | Bitnot -> TInt
+            | Lognot -> TBool
+            end
+          end in
+          Tctxt.add_global prev_ctxt decl.name ty
+      | _ -> prev_ctxt
+  in
+  let final_ctxt = List.fold_left fold_func tc p in
+  final_ctxt
 
 
 (* This function implements the |- prog and the H ; G |- prog 

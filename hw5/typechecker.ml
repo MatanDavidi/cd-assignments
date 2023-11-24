@@ -455,7 +455,7 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
           begin match decl.init.elt with
           | CNull rty -> (TNullRef rty)
           | CBool _ -> TBool
-          | CInt _ | Bop (_, _, _) -> TInt
+          | CInt _ -> TInt
           | CStr _ -> TRef RString
           | Id id -> 
             let looked_up_id = Tctxt.lookup_global_option id prev_ctxt in
@@ -492,11 +492,11 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
             | TRef (RFun (_, RetVal ty)) -> ty
             | _ -> raise (TypeError "Could not get return type of function call")
             end
+          | Bop (binop, _, _) -> 
+            let _, _, re_ty = typ_of_binop binop in
+            re_ty
           | Uop (unop, _) -> 
-            begin match unop with
-            | Neg | Bitnot -> TInt
-            | Lognot -> TBool
-            end
+            snd (typ_of_unop unop)
           end in
           Tctxt.add_global prev_ctxt decl.name ty
       | _ -> prev_ctxt

@@ -507,6 +507,10 @@ let create_struct_ctxt (p:Ast.prog) : Tctxt.t =
   final_ctxt
 
 let create_function_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
+  let builtins_fold = fun (prev_ctxt:Tctxt.t) ((f_name, (params, re_ty)):(id * (ty list * ret_ty))) : Tctxt.t ->
+    Tctxt.add_global prev_ctxt f_name (TRef (RFun (params, re_ty)))
+  in
+  let tc = List.fold_left builtins_fold tc builtins in
   let fold_func = 
     fun (prev_ctxt:Tctxt.t) (d:decl) : Tctxt.t -> 
       match d with
@@ -524,6 +528,7 @@ let create_function_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
   final_ctxt
 
 let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
+  let tc = { structs = tc.structs; globals = tc.globals; locals = tc.locals } in
   let fold_func = 
     fun (prev_ctxt:Tctxt.t) (d:decl) : Tctxt.t -> 
       match d with

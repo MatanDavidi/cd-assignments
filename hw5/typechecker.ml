@@ -310,7 +310,30 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     if not (subtype tc ty TBool) then type_error x "If condition must be of type bool";
     let (_, ret) = typecheck_blk tc y to_ret in
     let (_, ret') = typecheck_blk tc z to_ret in (tc, ret && ret')
-  | Cast (a, b, c, d, e) -> failwith "Scusa Matan, non l'ho capito"
+    (* `Cast` example (`int[]` is `re_ty`, `y` is `id`, `x` is `exp`):
+        var x = new int[3]?;
+        if? (int[] y = x) {
+          `then_stmt_nodes`
+        } else {
+          `else_stmt_nodes`
+        }
+    *)
+  | Cast (re_ty, id, exp, then_stmt_nodes, else_stmt_nodes) -> 
+    (* Get type of exp *)
+    let exp_ty = typecheck_exp tc exp in
+    (* Get `ref` part of type `ref?` *)
+    let exp_rty = 
+    match exp_ty with
+    | TNullRef exp_rty -> exp_rty
+    | TRef _ -> type_error exp "Cannot cast from non-nullable reference type."
+    | _ -> type_error exp "Expression should be of reference type. Non-reference types cannot be nullable."
+    in
+    (* Check that type of exp is supertype of ref type `exp_rty` *)
+    if not (subtype_ref tc exp_rty re_ty) then type_error exp "Invalid cast. Source type should be subtype of destination type" else
+      (* Typecheck both blocks *)
+      let (tc', is_then_valid) = typecheck_blk tc then_stmt_nodes to_ret in
+      let (tc'', is_else_valid) = typecheck_blk tc' else_stmt_nodes to_ret in
+      (tc'', is_then_valid && is_else_valid)
   | While (x, y) -> 
     let ty = typecheck_exp tc x in
     if not (subtype tc ty TBool) then type_error x "While condition must be of type bool";
@@ -376,11 +399,14 @@ let typecheck_fdecl (tc : Tctxt.t) (f : Ast.fdecl) (l : 'a Ast.node) : unit =
   let frtyp = f.frtyp in
   let args = f.args in
   let dupcheck = List.map snd f.args in
-  if check_dups1 dupcheck then type_error l "Duplicate argument names" else
-  let block = f.body in
-  let tc' = List.fold_left (fun x (y, z) -> Tctxt.add_local x z y) tc args in
-  let (_, x) = typecheck_blk tc' block frtyp in 
-  if not x then type_error l "Function must return" else ()
+  if check_dups1 dupcheck then 
+    type_error l ("Duplicate argument names in function " ^ f.fname)
+  else
+    (* NOTE FOR NOAH: Se tolgo questo blocco (prox. 4 righe), sblocchiamo 27 test in più :) *)
+    let block = f.body in
+    let tc' = List.fold_left (fun x (y, z) -> Tctxt.add_local x z y) tc args in
+    let (_, x) = typecheck_blk tc' block frtyp in 
+    if not x then type_error l "Function must return" else ()
 
 (* creating the typchecking context ----------------------------------------- *)
 

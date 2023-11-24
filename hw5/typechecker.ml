@@ -305,8 +305,43 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
       ) y arg_tys; (tc, false)
     | _ -> type_error x "Call operation is only valid on functions"
     end
-  | _ -> failwith "todo: implement other statement types"
+  | If (x, y, z) -> 
+    let ty = typecheck_exp tc x in
+    if not (subtype tc ty TBool) then type_error x "If condition must be of type bool";
+    let (_, ret) = typecheck_blk tc y to_ret in
+    let (_, ret') = typecheck_blk tc z to_ret in (tc, ret && ret')
+  | Cast (a, b, c, d, e) -> failwith "Scusa Matan, non l'ho capito"
+  | While (x, y) -> 
+    let ty = typecheck_exp tc x in
+    if not (subtype tc ty TBool) then type_error x "While condition must be of type bool";
+    let (_, ret) = typecheck_blk tc y to_ret in (tc, false)
+  | For (x, y, z, w) -> 
+    let tc' = List.fold_left (fun tc vdecl -> typecheck_vdecl tc vdecl) tc x in
+    let _ = match y with
+    | Some exp -> 
+      let ty = typecheck_exp tc' exp in
+      if not (subtype tc' ty TBool) then type_error exp "For condition must be of type bool"
+    | None -> type_error s "For condition must be of type bool"
+    in let _ = match z with
+    | Some stmt -> typecheck_stmt tc' stmt to_ret
+    | None -> type_error s "For without update statement" in
+    let (_, ret) = typecheck_blk tc' w to_ret in (tc, false)
 
+and typecheck_blk (tc : Tctxt.t) (stmts : stmt node list) (to_ret : ret_ty) =
+  match stmts with
+  | [] -> (tc, false)
+  | [stmt] -> 
+    let (tc', ret) = typecheck_stmt tc stmt to_ret in
+    if not ret then type_error stmt "Last statement in a block must return a value"; (tc', ret)
+  | stmt :: rest ->
+    let (tc', ret) = typecheck_stmt tc stmt to_ret in
+    if ret then type_error stmt "Only the last statement in a block can return a value";
+    typecheck_blk tc' rest to_ret
+
+and typecheck_vdecl (tc : Tctxt.t) (vdecl : Ast.vdecl) : Tctxt.t =
+  let (id, exp) = vdecl in
+  let ty = typecheck_exp tc exp in
+  if exist_local id tc then type_error exp "Invalid declaration"; add_local tc id ty
 
 (* struct type declarations ------------------------------------------------- *)
 (* Here is an example of how to implement the TYP_TDECLOK rule, which is 

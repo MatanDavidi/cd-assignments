@@ -204,19 +204,19 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
       let ty = typecheck_exp c y in
       let ty' = typecheck_exp c z in
       if not (subtype c ty ty') || not (subtype c ty' ty) then type_error e "Invalid"; TBool
-    | Add | Mul | Sub | Shl | Sar | Shl | IAnd | IOr -> 
+    | Add | Mul | Sub | Shr | Shl | Sar | IAnd | IOr -> 
       let ty = typecheck_exp c y in 
-      let ty' = typecheck_exp c y in
+      let ty' = typecheck_exp c z in
       if not (subtype c ty TInt) || not (subtype c ty' TInt) then type_error e "Invalid"; TInt
     | Lt | Lte | Gt | Gte -> 
       let ty = typecheck_exp c y in
-      let ty' = typecheck_exp c y in
+      let ty' = typecheck_exp c z in
       if not (subtype c ty TInt) || not (subtype c ty' TInt) then type_error e "Invalid"; TBool
     | And | Or -> 
       let ty = typecheck_exp c y in
-      let ty' = typecheck_exp c y in
+      let ty' = typecheck_exp c z in
       if not (subtype c ty TBool) || not (subtype c ty' TBool) then type_error e "Invalid"; TBool
-      end
+    end
   | Uop (x, y) ->
     match x with
     | Neg | Bitnot -> 

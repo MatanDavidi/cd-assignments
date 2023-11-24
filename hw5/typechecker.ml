@@ -366,8 +366,21 @@ let typecheck_tdecl (tc : Tctxt.t) id fs  (l : 'a Ast.node) : unit =
     - typechecks the body of the function (passing in the expected return type
     - checks that the function actually returns
 *)
+
+let check_dups1 (xs : id list) : bool =
+  let sorted_uniq_lst = List.sort_uniq compare xs in
+  List.length sorted_uniq_lst <> List.length xs
+
+
 let typecheck_fdecl (tc : Tctxt.t) (f : Ast.fdecl) (l : 'a Ast.node) : unit =
-  failwith "todo: typecheck_fdecl"
+  let frtyp = f.frtyp in
+  let args = f.args in
+  let dupcheck = List.map snd f.args in
+  if check_dups1 dupcheck then type_error l "Duplicate argument names" else
+  let block = f.body in
+  let tc' = List.fold_left (fun x (y, z) -> Tctxt.add_local x z y) tc args in
+  let (_, x) = typecheck_blk tc' block frtyp in 
+  if not x then type_error l "Function must return" else ()
 
 (* creating the typchecking context ----------------------------------------- *)
 

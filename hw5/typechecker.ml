@@ -404,11 +404,7 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
 and typecheck_blk (tc : Tctxt.t) (stmts : stmt node list) (to_ret : ret_ty) =
   match stmts with
   | [] -> (tc, false)
-  | [stmt] -> 
-    (* print_endline "Typechecking stmt"; *)
-    let (tc', ret) = typecheck_stmt tc stmt to_ret in
-    (* print_endline "Typechecked stmt"; *)
-    if not ret then type_error stmt "Last statement in a block must return a value"; (tc', ret)
+  | [stmt] -> typecheck_stmt tc stmt to_ret
   | stmt :: rest ->
     (* print_endline "Typechecking stmt"; *)
     let (tc', ret) = typecheck_stmt tc stmt to_ret in

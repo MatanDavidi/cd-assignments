@@ -344,6 +344,7 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     let ty = typecheck_exp tc x in
     begin match ty with
     | TRef (RFun (arg_tys, ret_ty)) ->
+      if List.length y <> List.length arg_tys then type_error s "Invalid number of arguments";
       if ret_ty <> RetVoid then 
         type_error x "Cannot call non-void returning function without assigning its value"
       else
@@ -406,11 +407,7 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
 and typecheck_blk (tc : Tctxt.t) (stmts : stmt node list) (to_ret : ret_ty) =
   match stmts with
   | [] -> (tc, false)
-  | [stmt] -> 
-    (* print_endline "Typechecking stmt"; *)
-    let (tc', ret) = typecheck_stmt tc stmt to_ret in
-    (* print_endline "Typechecked stmt"; *)
-    if not ret then type_error stmt "Last statement in a block must return a value"; (tc', ret)
+  | [stmt] -> typecheck_stmt tc stmt to_ret
   | stmt :: rest ->
     (* print_endline "Typechecking stmt"; *)
     let (tc', ret) = typecheck_stmt tc stmt to_ret in

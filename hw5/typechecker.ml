@@ -75,6 +75,7 @@ and subtype_retty (c : Tctxt.t) (t1 : Ast.ret_ty) (t2 : Ast.ret_ty) : bool =
   match t1, t2 with
   | RetVoid, RetVoid -> true
   | RetVal x, RetVal y -> subtype c x y
+  | _ -> false
 
 
 (* well-formed types -------------------------------------------------------- *)

@@ -228,6 +228,7 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     in
     begin match ty with
     | TRef (RFun (arg_tys, ret_ty)) ->
+      if List.length y <> List.length arg_tys then type_error e "Invalid number of arguments" else
       List.iter2 (fun arg def_ty ->
         let actual_ty = typecheck_exp c arg in
         if not (subtype c actual_ty def_ty) then
@@ -344,15 +345,15 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     let ty = typecheck_exp tc x in
     begin match ty with
     | TRef (RFun (arg_tys, ret_ty)) ->
-      if List.length y <> List.length arg_tys then type_error s "Invalid number of arguments";
-      if ret_ty <> RetVoid then 
-        type_error x "Cannot call non-void returning function without assigning its value"
-      else
-        List.iter2 (fun arg arg_ty ->
-          let arg_ty' = typecheck_exp tc arg in
-          if not (subtype tc arg_ty' arg_ty) then
-          type_error arg "Argument type does not match function parameter type"
-        ) y arg_tys; (tc, false)
+      if List.length y <> List.length arg_tys then type_error s "Invalid number of arguments" else
+        if ret_ty <> RetVoid then 
+          type_error x "Cannot call non-void returning function without assigning its value"
+        else
+          List.iter2 (fun arg arg_ty ->
+            let arg_ty' = typecheck_exp tc arg in
+            if not (subtype tc arg_ty' arg_ty) then
+            type_error arg "Argument type does not match function parameter type"
+          ) y arg_tys; (tc, false)
     | _ -> type_error x "Call operation is only valid on functions"
     end
   | If (x, y, z) -> 

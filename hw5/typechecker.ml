@@ -67,7 +67,7 @@ and subtype_ref (c : Tctxt.t) (t1 : Ast.rty) (t2 : Ast.rty) : bool =
       | Some x -> subtype c x y
       | None -> false
       ) second
-  | RFun (x, y), RFun (x', y') -> List.length x = List.length x' && List.for_all2 (subtype c) x x' && subtype_retty c y y'
+  | RFun (x, y), RFun (x', y') -> List.length x = List.length x' && List.for_all2 (subtype c) x' x && subtype_retty c y y'
   | _ -> false
 
 (* Decides whether H |-rt rt1 <: rt2 *)
@@ -227,9 +227,9 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     let ty = typecheck_exp c x in
     begin match ty with
     | TRef (RFun (arg_tys, ret_ty)) ->
-      List.iter2 (fun arg arg_ty ->
-        let arg_ty' = typecheck_exp c arg in
-        if not (subtype c arg_ty' arg_ty) then
+      List.iter2 (fun arg def_ty ->
+        let actual_ty = typecheck_exp c arg in
+        if not (subtype c actual_ty def_ty) then
         type_error arg "Argument type does not match function parameter type"
       ) y arg_tys; converter ret_ty
     | _ -> type_error x "Call operation is only valid on functions"

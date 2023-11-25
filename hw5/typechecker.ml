@@ -227,6 +227,7 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     let ty = typecheck_exp c x in
     begin match ty with
     | TRef (RFun (arg_tys, ret_ty)) ->
+      if List.length y <> List.length arg_tys then type_error e "Invalid number of arguments";
       List.iter2 (fun arg arg_ty ->
         let arg_ty' = typecheck_exp c arg in
         if not (subtype c arg_ty' arg_ty) then
@@ -343,6 +344,7 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     let ty = typecheck_exp tc x in
     begin match ty with
     | TRef (RFun (arg_tys, ret_ty)) ->
+      if List.length y <> List.length arg_tys then type_error s "Invalid number of arguments";
       List.iter2 (fun arg arg_ty ->
         let arg_ty' = typecheck_exp tc arg in
         if not (subtype tc arg_ty' arg_ty) then

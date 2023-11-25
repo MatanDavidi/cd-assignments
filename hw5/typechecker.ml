@@ -192,6 +192,11 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     | _ -> type_error x "Invalid"
     end
   | CStruct (x, y) ->
+    let struct_def = Tctxt.lookup_struct_option x c in
+    let _ = match struct_def with
+    | None -> type_error e ("Invalid struct reference " ^ x)
+    | Some fields -> if List.length y <> List.length fields then type_error e "Invalid number of arguments"
+    in
     (* print_endline "Bella Cuneo"; *)
     (* let ty = Tctxt.lookup_global x c in *)
     (* print_endline "MA SEI CERTO?!?!"; *)
@@ -325,6 +330,10 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     if not (exist_local lhs tc || not (exist_local lhs tc)) then type_error s "Invalid assignment";
     let ty1 = typecheck_exp tc x in
     let ty2 = typecheck_exp tc y in
+    begin match ty1 with
+    | TRef (RFun (_, _)) -> type_error x "Cannot assign values to function reference"
+    | _ -> ()
+    end;
     if not (subtype tc ty2 ty1) then type_error s "Invalid assignment"; (tc, false)
   | Decl (id, e) ->
     (* print_endline "B"; *)
@@ -547,7 +556,11 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
           | Id id -> 
             let looked_up_id = Tctxt.lookup_global_option id prev_ctxt in
             begin match looked_up_id with
-              | Some ty -> ty
+              | Some ty -> 
+                begin match ty with 
+                | (TRef (RFun (_, _))) -> type_error decl.init "Cannot initialize global variable to global function symbol"
+                | _ -> ty 
+                end
               | _ -> raise (TypeError ("Undefined symbol " ^ id))
             end
           | CArr (ty, _) -> TRef (RArray ty)

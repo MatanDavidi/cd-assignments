@@ -99,15 +99,17 @@ let rec typecheck_ty (l : 'a Ast.node) (tc : Tctxt.t) (t : Ast.ty) : unit =
   | TBool -> ()
   | TRef x -> typecheck_ref l tc x
   | TNullRef x -> typecheck_ref l tc x
-  | _ -> type_error l "Invalid"
+  (* The following is unused *)
+  | _ -> type_error l "Invalid K"
 
 and typecheck_ref (l : 'a Ast.node) (tc : Tctxt.t) (t : Ast.rty) : unit =
   match t with
   | RString -> ()
   | RArray x -> typecheck_ty l tc x
-  | RStruct x -> if Tctxt.lookup_struct_option x tc = None then type_error l "Invalid" else ()
+  | RStruct x -> if Tctxt.lookup_struct_option x tc = None then type_error l "Invalid M" else ()
   | RFun (x, y) -> List.iter (typecheck_ty l tc) x; typecheck_retty l tc y 
-  | _ -> type_error l "Invalid"
+  (* The following is unused *)
+  | _ -> type_error l "Invalid L"
 
 and typecheck_retty (l : 'a Ast.node) (tc : Tctxt.t) (t : Ast.ret_ty) : unit =
   match t with
@@ -182,14 +184,14 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     if not (subtype c ty' TInt) then type_error y "Array index must be of type int";
     begin match ty with
     | TRef (RArray x) -> x
-    | _ -> type_error x "Invalid"
+    | _ -> type_error x "Invalid A"
     end
   | Length x -> 
     (* print_endline "Bella cuno"; *)
     let ty = typecheck_exp c x in
     begin match ty with
     | TRef (RArray _) -> TInt
-    | _ -> type_error x "Invalid"
+    | _ -> type_error x "Invalid B"
     end
   | CStruct (x, y) ->
     let struct_def = Tctxt.lookup_struct_option x c in
@@ -216,13 +218,16 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     let ty = typecheck_exp c x in
     (* print_endline "ALloal andata"; *)
     begin match ty with
-    | TRef (RStruct z) -> 
+    | TRef (RStruct z) (* | TNullRef (RStruct z) *) -> 
       let field_op = lookup_field_option z y c in
       begin match field_op with
       | None -> type_error e ("Undefined field " ^ y ^ " in struct " ^ z)
       | Some ty -> ty
       end
-    | _ -> type_error x "Invalid"
+    | TBool -> ty (* NOTE FOR NOAH: Apparently this is valid?? *)
+    | TInt -> ty  (* NOTE FOR NOAH: Apparently this is valid?? *)
+    | TRef _ -> type_error x "Invalid TRef"
+    | TNullRef _ -> type_error x "Invalid TNullRef"
     end
   | Call (x, y) ->
     (* print_endline "Bella Champagna"; *)
@@ -247,29 +252,29 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     |Eq | Neq -> 
       let ty = typecheck_exp c y in
       let ty' = typecheck_exp c z in
-      if not (subtype c ty ty') || not (subtype c ty' ty) then type_error e "Invalid"; TBool
+      if not (subtype c ty ty') || not (subtype c ty' ty) then type_error e "Invalid D"; TBool
     | Add | Mul | Sub | Shr | Shl | Sar | IAnd | IOr -> 
       let ty = typecheck_exp c y in 
       let ty' = typecheck_exp c z in
-      if not (subtype c ty TInt) || not (subtype c ty' TInt) then type_error e "Invalid"; TInt
+      if not (subtype c ty TInt) || not (subtype c ty' TInt) then type_error e "Invalid E"; TInt
     | Lt | Lte | Gt | Gte -> 
       let ty = typecheck_exp c y in
       let ty' = typecheck_exp c z in
-      if not (subtype c ty TInt) || not (subtype c ty' TInt) then type_error e "Invalid"; TBool
+      if not (subtype c ty TInt) || not (subtype c ty' TInt) then type_error e "Invalid F"; TBool
     | And | Or -> 
       let ty = typecheck_exp c y in
       let ty' = typecheck_exp c z in
-      if not (subtype c ty TBool) || not (subtype c ty' TBool) then type_error e "Invalid"; TBool
+      if not (subtype c ty TBool) || not (subtype c ty' TBool) then type_error e "Invalid G"; TBool
     end
   | Uop (x, y) ->
     (* print_endline "Bella Brucdo"; *)
     match x with
     | Neg | Bitnot -> 
       let ty = typecheck_exp c y in
-      if not (subtype c ty TInt) then type_error e "Invalid"; TInt
+      if not (subtype c ty TInt) then type_error e "Invalid H"; TInt
     | Lognot -> 
       let ty = typecheck_exp c y in
-      if not (subtype c ty TBool) then type_error e "Invalid"; TBool
+      if not (subtype c ty TBool) then type_error e "Invalid I"; TBool
 
 (* statements --------------------------------------------------------------- *)
 
@@ -309,7 +314,7 @@ let rec lhs_id = function
   | Id x -> x
   | Proj (x, y) -> lhs_id x.elt
   | Index (x, y) -> lhs_id x.elt
-  | _ -> failwith "Invalid"
+  | _ -> failwith "Invalid J"
 
 let exist_local (x : Ast.id) (tc : Tctxt.t) : bool =
   match Tctxt.lookup_local_option x tc with
@@ -327,11 +332,12 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
   | Assn (x, y) -> 
     (* print_endline "A"; *)
     let lhs = lhs_id x.elt in
+    (* NOTE FOR NOAH: Questo non dovrebbe essere `exist_global` a destra *)
     if not (exist_local lhs tc || not (exist_local lhs tc)) then type_error s "Invalid assignment";
     let ty1 = typecheck_exp tc x in
     let ty2 = typecheck_exp tc y in
     begin match ty1 with
-    | TRef (RFun (_, _)) -> type_error x "Cannot assign values to function reference"
+    | TRef (RFun (_, _)) -> if exist_global lhs tc then type_error x "Cannot assign values to function reference"
     | _ -> ()
     end;
     if not (subtype tc ty2 ty1) then type_error s "Invalid assignment"; (tc, false)
@@ -392,6 +398,7 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     in
     (* Check that type of exp is supertype of ref type `exp_rty` *)
     if not (subtype_ref tc exp_rty re_ty) then type_error exp "Invalid cast. Source type should be subtype of destination type" else
+      let tc = add_local tc id (TRef re_ty) in
       (* Typecheck both blocks *)
       let (tc', is_then_valid) = typecheck_blk tc then_stmt_nodes to_ret in
       let (tc'', is_else_valid) = typecheck_blk tc' else_stmt_nodes to_ret in
@@ -556,10 +563,11 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
           | Id id -> 
             let looked_up_id = Tctxt.lookup_global_option id prev_ctxt in
             begin match looked_up_id with
-              | Some ty -> 
+              | Some ty ->
+                (* TODO: Raise type error in case of declarations like `global x = y` where `y` is NOT a function declaration (but may have TYPE function ref) *)
                 begin match ty with 
-                | (TRef (RFun (_, _))) -> type_error decl.init "Cannot initialize global variable to global function symbol"
-                | _ -> ty 
+                | (TRef (RFun (_, _))) -> ty
+                | _ -> type_error decl.init "Cannot initialize global variable to symbol not tied to global function"
                 end
               | _ -> raise (TypeError ("Undefined symbol " ^ id))
             end

@@ -513,10 +513,10 @@ let create_struct_ctxt (p:Ast.prog) : Tctxt.t =
   let fold_struct = 
     fun (prev_ctxt:Tctxt.t) (d:decl) : Tctxt.t -> 
       match d with
-      | Gtdecl { elt = added_ctxt ; _} -> 
+      | Gtdecl { elt = added_ctxt ; loc = l } -> 
         let decl_id = (fst added_ctxt) in
         if Tctxt.lookup_struct_option decl_id prev_ctxt <> None then 
-          raise (TypeError ("Duplicate struct definition " ^ decl_id))
+          type_error { elt = added_ctxt ; loc = l } ("Duplicate struct definition " ^ decl_id)
         else
           let fields = (snd added_ctxt) in
           let appended_ctxt = Tctxt.add_struct prev_ctxt decl_id fields in
@@ -534,9 +534,9 @@ let create_function_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
   let fold_func = 
     fun (prev_ctxt:Tctxt.t) (d:decl) : Tctxt.t -> 
       match d with
-      | Gfdecl { elt = decl ; _} -> 
+      | Gfdecl { elt = decl ; loc = l } -> 
         if Tctxt.lookup_global_option decl.fname prev_ctxt <> None then 
-          raise (TypeError ("Duplicate function definition " ^ decl.fname))
+          type_error { elt = decl ; loc = l } ("Duplicate function definition " ^ decl.fname)
         else
           begin match decl.frtyp with
           | RetVal ty -> Tctxt.add_global prev_ctxt decl.fname (TRef (RFun (List.map fst decl.args, RetVal ty)))
@@ -552,9 +552,9 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
   let fold_func = 
     fun (prev_ctxt:Tctxt.t) (d:decl) : Tctxt.t -> 
       match d with
-      | Gvdecl { elt = decl ; _} -> 
+      | Gvdecl { elt = decl ; loc = l } -> 
         if Tctxt.lookup_global_option decl.name prev_ctxt <> None then 
-          raise (TypeError ("Duplicate global value definition " ^ decl.name))
+          type_error { elt = decl ; loc = l } ("Duplicate global value definition " ^ decl.name)
         else
           let ty = 
           begin match decl.init.elt with
@@ -571,7 +571,7 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
                 | (TRef (RFun (_, _))) -> ty
                 | _ -> type_error decl.init "Cannot initialize global variable to symbol not tied to global function"
                 end
-              | _ -> raise (TypeError ("Undefined symbol " ^ id))
+              | _ -> type_error decl.init ("Undefined symbol " ^ id)
             end
           | CArr (ty, _) -> TRef (RArray ty)
           | NewArr (ty, _, _, _) -> TRef (RArray ty)
@@ -583,7 +583,7 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
             | _ -> type_error arr_exp_node decl.name
             end
           | Length _ -> TInt
-          | CStruct (id, []) -> raise (TypeError ("Cannot initialize var " ^ decl.name ^ " to empty struct " ^ id))
+          | CStruct (id, []) -> type_error decl.init ("Cannot initialize var " ^ decl.name ^ " to empty struct " ^ id)
           | CStruct (_, e::_) -> typecheck_exp prev_ctxt (snd e)
           | Proj (struct_exp_node, id) ->
             begin match struct_exp_node.elt with
@@ -600,7 +600,7 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
             let f_type = typecheck_exp prev_ctxt f_exp in
             begin match f_type with
             | TRef (RFun (_, RetVal ty)) -> ty
-            | _ -> raise (TypeError "Could not get return type of function call")
+            | _ -> type_error f_exp ("Could not get return type of function call")
             end
           | Bop (binop, _, _) -> 
             let _, _, re_ty = typ_of_binop binop in

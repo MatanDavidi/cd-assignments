@@ -340,6 +340,12 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     let ty2 = typecheck_exp tc y in
     begin match ty1 with
     | TRef (RFun (_, _)) -> if exist_global lhs tc then type_error x "Cannot assign values to function reference"
+    | TRef (RArray arr_ty1) | TNullRef (RArray arr_ty1) -> 
+      begin match ty2 with
+      | TRef (RArray arr_ty2) | TNullRef (RArray arr_ty2) -> 
+        if arr_ty1 <> arr_ty2 then type_error x "Cannot assign values to array of different type"
+      | _ -> ()
+      end
     | _ -> ()
     end;
     if not (subtype tc ty2 ty1) then type_error s "Invalid assignment"; (tc, false)

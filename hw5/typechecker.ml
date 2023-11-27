@@ -202,7 +202,10 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     | Some fields -> if List.length y <> List.length fields then type_error e "Invalid number of arguments"
     in
     (* print_endline "Bella Cuneo"; *)
-    (* let ty = Tctxt.lookup_global x c in *)
+    begin match lookup_struct_option x c with
+    | None -> type_error e ("Undefined struct symbol " ^ x)
+    | Some _ -> ()
+    end;
     (* print_endline "MA SEI CERTO?!?!"; *)
     List.iter (fun (id, exp) ->
     let field_ty = typecheck_exp c exp in
@@ -218,6 +221,7 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
   | Proj (x, y) ->
     (* print_endline "Bella Allola"; *)
     let ty = typecheck_exp c x in
+    (* print_endline ("Getting field " ^ (string_of_exp x) ^ " of type " ^ (string_of_ty ty)); *)
     (* print_endline "ALloal andata"; *)
     begin match ty with
     | TRef (RStruct z) (* | TNullRef (RStruct z) *) -> 
@@ -246,7 +250,7 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
         if not (subtype c actual_ty def_ty) then
         type_error arg "Argument type does not match function parameter type"
       ) y arg_tys; converter ret_ty
-    | _ -> type_error x "Call operation is only valid on functions"
+    | _ -> type_error x ("Call operation is only valid on functions -- got " ^ (string_of_ty ty))
     end
   | Bop (x, y, z) ->
     (* print_endline "Bella Castagna"; *)
@@ -486,6 +490,41 @@ let typecheck_fdecl (tc : Tctxt.t) (f : Ast.fdecl) (l : 'a Ast.node) : unit =
 
 (* creating the typchecking context ----------------------------------------- *)
 
+type decls = { gvars: gdecl list; gfuncs: fdecl list; gstructs: tdecl list }
+let decls = ref { gvars = []; gfuncs = []; gstructs = [] }
+let add_gvar_decl (decl:gdecl) : unit = 
+  decls := { gvars = !decls.gvars @ [decl]; gfuncs = !decls.gfuncs; gstructs = !decls.gstructs }
+  
+let add_func_decl (decl:fdecl) : unit = 
+  decls := { gvars = !decls.gvars; gfuncs = !decls.gfuncs @ [decl]; gstructs = !decls.gstructs }
+
+let add_struct_decl (decl:tdecl) : unit = 
+  decls := { gvars = !decls.gvars; gfuncs = !decls.gfuncs; gstructs = !decls.gstructs @ [decl] }
+
+let lookup_gvar (id:id) : gdecl option =
+  let rec lookup_helper (id:id) (gdecls:gdecl list) : gdecl option =
+    match gdecls with
+    | [] -> None
+    | (gvar :: gvars) -> if gvar.name = id then Some gvar else lookup_helper id gvars
+  in
+  lookup_helper id !decls.gvars
+
+let lookup_func (id:id) : fdecl option =
+  let rec lookup_helper (id:id) (fdecls:fdecl list) : fdecl option =
+    match fdecls with
+    | [] -> None
+    | (gfunc :: gfuncs) -> if gfunc.fname = id then Some gfunc else lookup_helper id gfuncs
+  in
+  lookup_helper id !decls.gfuncs
+
+let lookup_struct (id:id) : tdecl option =
+  let rec lookup_helper (id:id) (tdecls:tdecl list) : tdecl option =
+    match tdecls with
+    | [] -> failwith ("Unable to find symbol " ^ id ^ " in global declarations")
+    | (gstruct :: gstructs) -> if fst gstruct = id then Some gstruct else lookup_helper id gstructs
+  in
+  lookup_helper id !decls.gstructs
+
 (* The following functions correspond to the
    judgments that create the global typechecking context.
 
@@ -521,6 +560,7 @@ let create_struct_ctxt (p:Ast.prog) : Tctxt.t =
           type_error { elt = added_ctxt ; loc = l } ("Duplicate struct definition " ^ decl_id)
         else
           let fields = (snd added_ctxt) in
+          add_struct_decl added_ctxt;
           let appended_ctxt = Tctxt.add_struct prev_ctxt decl_id fields in
           appended_ctxt
       | _ -> prev_ctxt
@@ -540,6 +580,7 @@ let create_function_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
         if Tctxt.lookup_global_option decl.fname prev_ctxt <> None then 
           type_error { elt = decl ; loc = l } ("Duplicate function definition " ^ decl.fname)
         else
+          add_func_decl decl;
           begin match decl.frtyp with
           | RetVal ty -> Tctxt.add_global prev_ctxt decl.fname (TRef (RFun (List.map fst decl.args, RetVal ty)))
           | RetVoid -> Tctxt.add_global prev_ctxt decl.fname (TRef (RFun (List.map fst decl.args, RetVoid)))
@@ -558,6 +599,7 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
         if Tctxt.lookup_global_option decl.name prev_ctxt <> None then 
           type_error { elt = decl ; loc = l } ("Duplicate global value definition " ^ decl.name)
         else
+          add_gvar_decl decl;
           let ty = 
           begin match decl.init.elt with
           | CNull rty -> (TNullRef rty)
@@ -565,15 +607,11 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
           | CInt _ -> TInt
           | CStr _ -> TRef RString
           | Id id ->
+            if lookup_gvar id <> None then type_error decl.init "Global variable instantiation cannot contain global variables." else
             let looked_up_id = Tctxt.lookup_global_option id prev_ctxt in
             begin match looked_up_id with
-              | Some ty ->
-                (* TODO: Raise type error in case of declarations like `global x = y` where `y` is NOT a function declaration (but may have TYPE function ref) *)
-                begin match ty with 
-                | (TRef (RFun (_, _))) -> ty
-                | _ -> type_error decl.init "Cannot initialize global variable to symbol not tied to global function"
-                end
-              | _ -> type_error decl.init ("Undefined symbol " ^ id)
+              | Some ty -> ty
+              | None -> type_error decl.init ("Undefined symbol " ^ id)
             end
           | CArr (ty, _) -> TRef (RArray ty)
           | NewArr (ty, _, _, _) -> TRef (RArray ty)
@@ -586,7 +624,9 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
             end
           | Length _ -> TInt
           | CStruct (id, []) -> type_error decl.init ("Cannot initialize var " ^ decl.name ^ " to empty struct " ^ id)
-          | CStruct (_, e::_) -> typecheck_exp prev_ctxt (snd e)
+          | CStruct (id, fields) -> 
+            let _ = List.map (fun (field: id * exp node) -> typecheck_exp prev_ctxt (snd field)) fields in
+            TRef (RStruct id)
           | Proj (struct_exp_node, id) ->
             begin match struct_exp_node.elt with
             (* s.id is only valid if `s` is a struct type, and `id` is found inside `struct s` declaration *)

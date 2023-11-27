@@ -613,16 +613,24 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
               | Some ty -> ty
               | None -> type_error decl.init ("Undefined symbol " ^ id)
             end
-          | CArr (ty, _) -> TRef (RArray ty)
-          | NewArr (ty, _, _, _) -> TRef (RArray ty)
-          | Index (arr_exp_node, _) -> 
+          | CArr (ty, elems) -> 
+            let _ = List.map (typecheck_exp prev_ctxt) elems in
+            TRef (RArray ty)
+          | NewArr (ty, count_exp, _, init_exp) -> 
+            let _ = typecheck_exp prev_ctxt count_exp in
+            let _ = typecheck_exp prev_ctxt init_exp in
+            TRef (RArray ty)
+          | Index (arr_exp_node, index_exp_node) -> 
             let arr_ty = typecheck_exp prev_ctxt arr_exp_node in
+            let _ = typecheck_exp prev_ctxt index_exp_node in
             (* If `arr : ty[]` and `i : int`, then `arr[i] : ty` *)
             begin match arr_ty with
             | TRef (RArray ty) -> ty
             | _ -> type_error arr_exp_node decl.name
             end
-          | Length _ -> TInt
+          | Length exp -> 
+            let _ = typecheck_exp prev_ctxt exp in
+            TInt
           | CStruct (id, []) -> type_error decl.init ("Cannot initialize var " ^ decl.name ^ " to empty struct " ^ id)
           | CStruct (id, fields) -> 
             let _ = List.map (fun (field: id * exp node) -> typecheck_exp prev_ctxt (snd field)) fields in
@@ -638,16 +646,20 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
               end
             | _ -> type_error struct_exp_node id
             end
-          | Call (f_exp, _) -> 
+          | Call (f_exp, args) -> 
             let f_type = typecheck_exp prev_ctxt f_exp in
+            let _ = List.map (typecheck_exp prev_ctxt) args in
             begin match f_type with
             | TRef (RFun (_, RetVal ty)) -> ty
             | _ -> type_error f_exp ("Could not get return type of function call")
             end
-          | Bop (binop, _, _) -> 
+          | Bop (binop, lhs_exp, rhs_exp) -> 
+            let _ = typecheck_exp prev_ctxt lhs_exp in
+            let _ = typecheck_exp prev_ctxt rhs_exp in
             let _, _, re_ty = typ_of_binop binop in
             re_ty
-          | Uop (unop, _) -> 
+          | Uop (unop, exp) -> 
+            let _ = typecheck_exp prev_ctxt exp in
             snd (typ_of_unop unop)
           end in
           Tctxt.add_global prev_ctxt decl.name ty

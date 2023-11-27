@@ -310,11 +310,13 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
      block typecheck rules.
 *)
 
-let rec lhs_id = function
+let rec lhs_id (e:exp node) : id =
+  match e.elt with
   | Id x -> x
-  | Proj (x, y) -> lhs_id x.elt
-  | Index (x, y) -> lhs_id x.elt
-  | _ -> failwith "Invalid J"
+  | Proj (x, y) -> lhs_id x
+  | Index (x, y) -> lhs_id x
+  | Call (fname, _) -> lhs_id fname
+  | _ -> type_error e "Invalid J"
 
 let exist_local (x : Ast.id) (tc : Tctxt.t) : bool =
   match Tctxt.lookup_local_option x tc with
@@ -331,8 +333,8 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
   match s.elt with
   | Assn (x, y) -> 
     (* print_endline "A"; *)
-    let lhs = lhs_id x.elt in
-    (* NOTE FOR NOAH: Questo non dovrebbe essere `exist_global` a destra *)
+    let lhs = lhs_id x in
+    (* NOTE FOR NOAH: Questo non dovrebbe essere `exist_global` a destra? *)
     if not (exist_local lhs tc || not (exist_local lhs tc)) then type_error s "Invalid assignment";
     let ty1 = typecheck_exp tc x in
     let ty2 = typecheck_exp tc y in

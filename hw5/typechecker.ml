@@ -59,12 +59,14 @@ let rec subtype (c : Tctxt.t) (t1 : Ast.ty) (t2 : Ast.ty) : bool =
 and subtype_ref (c : Tctxt.t) (t1 : Ast.rty) (t2 : Ast.rty) : bool =
   match t1, t2 with
   | RString, RString -> true
-  | RArray x, RArray y -> subtype c x y
+  | RArray x, RArray y -> x = y
   | RStruct x, RStruct y -> 
     let second = Tctxt.lookup_struct y c in
-    List.for_all (fun second -> let n = second.fieldName in let y = second.ftyp in
+    List.for_all (fun second -> 
+      let n = second.fieldName in 
+      let y = second.ftyp in
       match lookup_field_option x n c with
-      | Some x -> subtype c x y
+      | Some x -> x = y
       | None -> false
       ) second
   | RFun (x, y), RFun (x', y') -> List.length x = List.length x' && List.for_all2 (subtype c) x' x && subtype_retty c y y'
@@ -340,12 +342,6 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     let ty2 = typecheck_exp tc y in
     begin match ty1 with
     | TRef (RFun (_, _)) -> if exist_global lhs tc then type_error x "Cannot assign values to function reference"
-    | TRef (RArray arr_ty1) | TNullRef (RArray arr_ty1) -> 
-      begin match ty2 with
-      | TRef (RArray arr_ty2) | TNullRef (RArray arr_ty2) -> 
-        if arr_ty1 <> arr_ty2 then type_error x "Cannot assign values to array of different type"
-      | _ -> ()
-      end
     | _ -> ()
     end;
     if not (subtype tc ty2 ty1) then type_error s "Invalid assignment"; (tc, false)
@@ -568,7 +564,7 @@ let create_global_ctxt (tc:Tctxt.t) (p:Ast.prog) : Tctxt.t =
           | CBool _ -> TBool
           | CInt _ -> TInt
           | CStr _ -> TRef RString
-          | Id id -> 
+          | Id id ->
             let looked_up_id = Tctxt.lookup_global_option id prev_ctxt in
             begin match looked_up_id with
               | Some ty ->

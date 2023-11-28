@@ -230,8 +230,8 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
       | None -> type_error e ("Undefined field " ^ y ^ " in struct " ^ z)
       | Some ty -> ty
       end
-    | TBool -> ty (* NOTE FOR NOAH: Apparently this is valid?? *)
-    | TInt -> ty  (* NOTE FOR NOAH: Apparently this is valid?? *)
+    | TBool ->  type_error x "Invalid TBool"
+    | TInt ->   type_error x "Invalid TInt"
     | TRef _ -> type_error x "Invalid TRef"
     | TNullRef _ -> type_error x "Invalid TNullRef"
     end

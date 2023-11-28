@@ -642,7 +642,28 @@ let rec cmp_gexp c (tc : TypeCtxt.t) (e:Ast.exp node) : Ll.gdecl * (Ll.gid * Ll.
 
   (* STRUCT TASK: Complete this code that generates the global initializers for a struct value. *)  
   | CStruct (id, cs) ->
-    failwith "todo: Cstruct case of cmp_gexp"
+    (* See `typechecker.ml -- Line 140` *)
+    let sorted_fields = 
+      List.sort (
+        fun (fieldname_1, _:id * exp node) (fieldname_2, _:id * exp node) : int -> 
+          let index_1 = TypeCtxt.index_of_field id fieldname_1 tc in
+          let index_2 = TypeCtxt.index_of_field id fieldname_2 tc in
+        index_1 - index_2
+      ) cs
+    in
+    let gdecls, global_structs = List.fold_right (
+      fun (_, field_exp:id * exp node) ((gdecls:Ll.gdecl list), (prev_global_structs:(id * Ll.gdecl) list)) : (Ll.gdecl list * (id * Ll.gdecl) list) ->
+      let gdecl, new_global_structs = cmp_gexp c tc field_exp in 
+      gdecl :: gdecls, new_global_structs @ prev_global_structs
+    ) sorted_fields ([], [])
+    in
+    let init_sym = gensym id ^ "_struct_init" in
+    let t_ty = Namedt id in
+    let t_init = GStruct gdecls in
+    (
+      (Ptr t_ty, GGid init_sym), 
+      (init_sym, (t_ty, t_init)) :: global_structs
+    )
 
   | _ -> failwith "bad global initializer"
 

@@ -196,13 +196,13 @@ let oat_alloc_array ct (t:Ast.ty) (size:Ll.operand) : Ll.ty * operand * stream =
    - make sure to calculate the correct amount of space to allocate!
 *)
 let oat_alloc_struct ct (id:Ast.id) : Ll.ty * operand * stream =
-  let ans_id, t_id = gensym "array", gensym "raw_array" in
+  let ans_id, t_id = gensym "struct", gensym "raw_struct" in
   let ans_ty = cmp_ty ct @@ TRef (RStruct id) in
   let t_ty = Ptr I64 in
   let fields = TypeCtxt.lookup id ct in
   let size = Const (Int64.mul (Int64.of_int (List.length fields)) 8L) in
   ans_ty, Id ans_id, lift
-    [ t_id, Call(t_ty, Gid "oat_alloc_array", [I64, size])
+    [ t_id, Call(t_ty, Gid "oat_malloc", [I64, size])
     ; ans_id, Bitcast(t_ty, Id t_id, ans_ty) ]
 
 
@@ -350,8 +350,8 @@ let rec cmp_exp (tc : TypeCtxt.t) (c:Ctxt.t) (exp:Ast.exp node) : Ll.ty * Ll.ope
     let t_ty, t_op, t_stream = oat_alloc_struct tc id in
     let fold_fields = 
       (fun ((prev_store_stream, prev_cmp_stream): stream * stream) ((field_id, field_exp): id * exp node) : (stream * stream) ->
-        let exp_ty, exp_op, exp_stream = cmp_exp tc c field_exp in
         let field_ty, field_index = TypeCtxt.lookup_field_name id field_id tc in
+        let exp_ty, exp_op, exp_stream = cmp_exp tc c field_exp in
         let field_ty_ll = cmp_ty tc field_ty in
         let field_ptr_sym = gensym (field_id ^ "_field_ptr") in
         let field_val_sym = gensym (field_id ^ "_field_val") in
@@ -610,7 +610,14 @@ let cmp_fdecl (tc : TypeCtxt.t) (c:Ctxt.t) (f:Ast.fdecl node) : Ll.fdecl * (Ll.g
   let f_cfg, globals = cfg_of_stream (args_code >@ block_code >@ return_code) in
   {f_ty; f_param; f_cfg}, globals
 
-
+let sort_fields (tc:TypeCtxt.t) (struct_id:id) (fields: (id * exp node) list) : (id * exp node) list =
+  (* See `typechecker.ml -- Line 140` *)
+  List.sort (
+    fun (fieldname_1, _:id * exp node) (fieldname_2, _:id * exp node) : int -> 
+      let index_1 = TypeCtxt.index_of_field struct_id fieldname_1 tc in
+      let index_2 = TypeCtxt.index_of_field struct_id fieldname_2 tc in
+    index_1 - index_2
+  ) fields
 
 (* Compile a global initializer, returning the resulting LLVMlite global
    declaration, and a list of additional global declarations.
@@ -642,23 +649,15 @@ let rec cmp_gexp c (tc : TypeCtxt.t) (e:Ast.exp node) : Ll.gdecl * (Ll.gid * Ll.
 
   (* STRUCT TASK: Complete this code that generates the global initializers for a struct value. *)  
   | CStruct (id, cs) ->
-    (* See `typechecker.ml -- Line 140` *)
-    let sorted_fields = 
-      List.sort (
-        fun (fieldname_1, _:id * exp node) (fieldname_2, _:id * exp node) : int -> 
-          let index_1 = TypeCtxt.index_of_field id fieldname_1 tc in
-          let index_2 = TypeCtxt.index_of_field id fieldname_2 tc in
-        index_1 - index_2
-      ) cs
-    in
-    let gdecls, global_structs = List.fold_right (
-      fun (_, field_exp:id * exp node) ((gdecls:Ll.gdecl list), (prev_global_structs:(id * Ll.gdecl) list)) : (Ll.gdecl list * (id * Ll.gdecl) list) ->
-      let gdecl, new_global_structs = cmp_gexp c tc field_exp in 
-      gdecl :: gdecls, new_global_structs @ prev_global_structs
-    ) sorted_fields ([], [])
-    in
     let init_sym = gensym id ^ "_struct_init" in
     let t_ty = Namedt id in
+    let sorted_fields = sort_fields tc id cs in
+    let gdecls, global_structs = List.fold_right (
+      fun (_, field_exp: id * exp node) ((gdecls: Ll.gdecl list), (prev_global_structs: (id * Ll.gdecl) list)) : (Ll.gdecl list * (id * Ll.gdecl) list) ->
+      let gdecl, new_global_structs = cmp_gexp c tc field_exp in 
+      gdecl :: gdecls, prev_global_structs @ new_global_structs
+    ) sorted_fields ([], [])
+    in
     let t_init = GStruct gdecls in
     (
       (Ptr t_ty, GGid init_sym), 

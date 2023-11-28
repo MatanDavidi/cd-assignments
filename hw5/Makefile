@@ -10,7 +10,7 @@ all: main.native
 
 .PHONY: test
 test: main.native
-	./main.native --test
+	./main.native -linux --test
 
 .PHONY: main.native
 main.native: 

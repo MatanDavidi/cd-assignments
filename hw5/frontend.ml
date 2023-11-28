@@ -276,8 +276,14 @@ let rec cmp_exp (tc : TypeCtxt.t) (c:Ctxt.t) (exp:Ast.exp node) : Ll.ty * Ll.ope
        of the array struct representation.
   *)
   | Ast.Length e ->
-    failwith "todo:implement Ast.Length case"
-
+    let arr_typ, arr_op, arr_prog = cmp_exp tc c e in
+    let typer = 
+    match arr_typ with
+      | Ptr (Struct [I64; Array (_,x)]) -> x
+      | _ -> failwith  ("Length can only accept Arrays")
+    in let ptr_id = gensym "ptr_id" in
+    let ptr_length = gensym "ptr_length" in
+    I64, (Id ptr_length), arr_prog >@ lift [ ptr_id, Gep(arr_typ, arr_op, [Const 0L; Const 0L]); ptr_length, Load(Ptr typer, Id ptr_id)]
   | Ast.Index (e, i) ->
     let ans_ty, ptr_op, code = cmp_exp_lhs tc c exp in
     let ans_id = gensym "index" in
@@ -313,7 +319,19 @@ let rec cmp_exp (tc : TypeCtxt.t) (c:Ctxt.t) (exp:Ast.exp node) : Ll.ty * Ll.ope
   | Ast.NewArr (elt_ty, e1, id, e2) ->    
     let _, size_op, size_code = cmp_exp tc c e1 in
     let arr_ty, arr_op, alloc_code = oat_alloc_array tc elt_ty size_op in
-    arr_ty, arr_op, size_code >@ alloc_code
+    let arrid = gensym "arrid" in
+    let arrlen = gensym "arrlen" in 
+    let ansid = gensym "ansid" in
+    let c' = Ctxt.add (Ctxt.add c arrlen (Ptr I64, Id arrlen)) arrid (Ptr arr_ty, Id arrid) in
+    let arrcode = lift [ arrid, Alloca arr_ty; "", Store (arr_ty, arr_op, Id arrid)] in 
+    let arr_len_code = lift [ arrlen, Alloca I64; "", Store (I64, size_op, Id arrlen)] in
+    let decl = (id, no_loc @@ CInt 0L) in
+    let x = no_loc @@ Bop(Lt, no_loc @@ Id id, no_loc @@ Id arrlen) in
+    let y = no_loc @@ Assn(no_loc @@ Id id, no_loc @@ Bop(Add, no_loc @@ Id id, no_loc @@ CInt 1L)) in
+    let z = no_loc @@ Assn(no_loc @@ Index(no_loc @@ Id arrid, no_loc @@ Id id), e2) in
+    let loop = no_loc @@ For([decl], Some x, Some y, [z]) in 
+    let _, newone = cmp_stmt tc c' Void loop in arr_ty, Id ansid,
+    size_code >@ alloc_code >@ arrcode >@ arr_len_code  >@ newone>@ lift [ansid, Load(Ptr arr_ty, Id arrid)] 
 
    (* STRUCT TASK: complete this code that compiles struct expressions.
       For each field component of the struct

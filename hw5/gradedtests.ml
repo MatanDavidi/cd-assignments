@@ -448,6 +448,96 @@ let tc_err_tests = [
 ; "hw5programs/tc_ifq_err1.oat"
 ]
 
+let hw4_prefix = "./compiler-design-eth-tests/04/"
+let hw5_prefix = "./compiler-design-eth-tests/05/"
+
+let incorrect_types = [
+    hw5_prefix ^ "dbernhard/" ^ "err_subtype.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_subtype2.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_subtype3.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_array_subtype.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_array_subtype2.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_branching.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_branching2.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_builtin.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_call_retvoid.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_cast.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_cast2.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_function_return_type.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_return.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_return2.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_return3.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_return4.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_return5.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_redefined.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_redefined2.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_redefined3.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_redefined4.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_redefined5.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_redefined6.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_redefined7.oat"
+  ; hw5_prefix ^ "dbernhard/" ^ "err_type_mismatch.oat"
+]
+
+let simple_tests = [
+  (hw4_prefix ^ "dbernhard/" ^ "simple_while.oat", "", "10")
+  ; (hw4_prefix ^ "dbernhard/" ^ "simple_while2.oat", "", "50") (* function return value as condition *)
+  ; (hw4_prefix ^ "dbernhard/" ^ "while_false.oat", "", "4")
+  ; (hw4_prefix ^ "dbernhard/" ^ "while_false2.oat", "", "4")
+  ; (hw4_prefix ^ "dbernhard/" ^ "array_indexing.oat", "", "205") (* various indices *)
+  ; (hw4_prefix ^ "dbernhard/" ^ "array_indexing2.oat", "", "105") (* 2d array *)
+  ; (hw4_prefix ^ "dbernhard/" ^ "length.oat", "asdf", "4") (* returns length of the first argument *)
+  ; (hw4_prefix ^ "dbernhard/" ^ "arr_of_string.oat", "abc", "98") (* returns second character as integer *)
+  ; (hw4_prefix ^ "dbernhard/" ^ "str_cat.oat", "", "hello42")
+  ; (hw4_prefix ^ "dbernhard/" ^ "str_of_arr.oat", "", "bcd0")
+  ; (hw4_prefix ^ "dbernhard/" ^ "print_bool.oat", "", "falsetruefalse5")
+  ; (hw4_prefix ^ "dbernhard/" ^ "simple_global_update.oat", "", "11")
+  ; (hw4_prefix ^ "dbernhard/" ^ "tests_if.oat", "", "1")
+  ; (hw4_prefix ^ "dbernhard/" ^ "tests_if2.oat", "", "1")
+  ; (hw4_prefix ^ "dbernhard/" ^ "tests_if3.oat", "", "110")
+  ; (hw4_prefix ^ "dbernhard/" ^ "tests_if5.oat", "", "60")
+  ; (hw4_prefix ^ "dbernhard/" ^ "tests_if6.oat", "", "65")
+  ; (hw4_prefix ^ "dbernhard/" ^ "tests_if7.oat", "", "53")
+  ; (hw4_prefix ^ "dbernhard/" ^ "tests_if8.oat", "", "50")
+  ; (hw4_prefix ^ "dbernhard/" ^ "advanced_add.oat", "", "4")
+  ; (hw4_prefix ^ "dbernhard/" ^ "for_cond_fun2.oat", "", "1, 3, 5, 7, 9, 11, b:50")
+  ; (hw4_prefix ^ "dbernhard/" ^ "empty.oat", "", "5")
+  ; (hw4_prefix ^ "dbernhard/" ^ "printing.oat", "", "hello42")
+  ; (hw4_prefix ^ "dbernhard/" ^ "update_global.oat", "", "12")
+  ; (hw4_prefix ^ "dbernhard/" ^ "argc.oat", "2", "20") (* character '2' is from amount of args and second character is the return code*)
+
+  (* now come hw5 tests*)
+  ; (hw5_prefix ^ "dbernhard/" ^ "mat_mult.oat", "", "11 7 13 14 3 22 4 1 5 0")
+  ; (hw5_prefix ^ "dbernhard/" ^ "for_cond_fun.oat", "", "10,11,12,13,14,15,16,17,18,0")
+  ; (hw5_prefix ^ "dbernhard/" ^ "null_update_global2.oat", "", "12")
+  ; (hw5_prefix ^ "dbernhard/" ^ "equality.oat", "", "are equal0")
+  ; (hw5_prefix ^ "dbernhard/" ^ "non_equality.oat", "", "not equal0")
+  ; (hw5_prefix ^ "dbernhard/" ^ "count_primes_less_100.oat", "", "25")
+  ; (hw5_prefix ^ "dbernhard/" ^ "init_array_subtype.oat", "", "0")
+  ; (hw5_prefix ^ "dbernhard/" ^ "init_id.oat", "", "7")
+  ; (hw5_prefix ^ "dbernhard/" ^ "init_with_function.oat", "", "5")
+  ; (hw5_prefix ^ "dbernhard/" ^ "init_with_function2.oat", "", "10")
+  ; (hw5_prefix ^ "dbernhard/" ^ "runtime_ex_oob.oat", "", "Out of bounds index 4 for array length 31")
+  ; (hw5_prefix ^ "dbernhard/" ^ "sum_different_types.oat", "", "6")
+]
+
+let oat_file = [
+    (hw5_prefix ^ "thbwd/" ^ "compile_struct_order.oat", "", "123412340");
+    (hw5_prefix ^ "thbwd/" ^ "polymorphic_array.oat", "", "1230");
+  ]
+
+let oat_error = [
+    hw5_prefix ^ "thbwd/" ^ "dead_code1.oat";
+    hw5_prefix ^ "thbwd/" ^ "dead_code2.oat";
+    hw5_prefix ^ "thbwd/" ^ "illegal_for_stmt.oat";
+    hw5_prefix ^ "thbwd/" ^ "assign_global_function.oat";
+    hw5_prefix ^ "thbwd/" ^ "array_init_shadowing.oat";
+  ] 
+
+let oat_correct = [
+    hw5_prefix ^ "thbwd/" ^ "undead_code1.oat";
+    hw5_prefix ^ "thbwd/" ^ "undead_code2.oat";
+  ]
 
 let typecheck_tests : suite = [
   GradedTest("subtype unit tests", 3, unit_tests);
@@ -482,7 +572,15 @@ let hw4_tests =
     @ hw4_hard_tests
     @ hw4_old_student_tests
 
-let functionality_tests : suite = [GradedTest("functionality tests from HW04", 10, executed_oat_file hw4_tests)]
+let functionality_tests : suite = [
+GradedTest("functionality tests from HW04", 10, executed_oat_file hw4_tests);
+  GradedTest("dbernhard tests1", 0, typecheck_file_error incorrect_types);
+  GradedTest("dbernhard tests2", 0, executed_oat_file simple_tests);
+  GradedTest("thbwd tests1", 0, executed_oat_file oat_file);
+  GradedTest("thbwd tests2", 0, typecheck_file_correct oat_correct);
+  GradedTest("thbwd tests3", 0, typecheck_file_error oat_error);
+]
+
 
 let graded_tests : suite =
   typecheck_tests @

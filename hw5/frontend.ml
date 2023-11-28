@@ -347,7 +347,24 @@ let rec cmp_exp (tc : TypeCtxt.t) (c:Ctxt.t) (exp:Ast.exp node) : Ll.ty * Ll.ope
        - store the resulting value into the structure
    *)
   | Ast.CStruct (id, l) ->
-    failwith "TODO: Ast.CStruct"
+    let t_ty, t_op, t_stream = oat_alloc_struct tc id in
+    let fold_fields = 
+      (fun ((prev_store_stream, prev_cmp_stream): stream * stream) ((field_id, field_exp): id * exp node) : (stream * stream) ->
+        let exp_ty, exp_op, exp_stream = cmp_exp tc c field_exp in
+        let field_ty, field_index = TypeCtxt.lookup_field_name id field_id tc in
+        let field_ty_ll = cmp_ty tc field_ty in
+        let field_ptr_sym = gensym (field_id ^ "_field_ptr") in
+        let field_val_sym = gensym (field_id ^ "_field_val") in
+        let store_sym = gensym "store_field_" ^ field_id ^ "_val" in
+        let field_gep_stream = [I (field_ptr_sym, Gep (t_ty, t_op, [Const 0L; Const field_index]))] in
+        let field_cast_stream = [I (field_val_sym, Bitcast (exp_ty, exp_op, field_ty_ll))] in 
+        let new_store_stream = [I (store_sym, Store (field_ty_ll, Id field_val_sym, Id field_ptr_sym))] in
+        prev_store_stream >@ field_gep_stream >@ field_cast_stream >@ new_store_stream,
+        prev_cmp_stream >@ exp_stream
+      )
+    in
+    let store_stream, cmp_stream = List.fold_left fold_fields ([], []) l in
+    t_ty, t_op, t_stream >@ cmp_stream >@ store_stream
 
   | Ast.Proj (e, id) ->
     let ans_ty, ptr_op, code = cmp_exp_lhs tc c exp in

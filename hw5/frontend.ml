@@ -386,8 +386,17 @@ and cmp_exp_lhs (tc : TypeCtxt.t) (c:Ctxt.t) (e:exp node) : Ll.ty * Ll.operand *
      You will find the TypeCtxt.lookup_field_name function helpful.
   *)
   | Ast.Proj (e, i) ->
-    failwith "todo: Ast.Proj case of cmp_exp_lhs"
-
+    let t_ty, t_op, t_stream = cmp_exp tc c e in
+    let t_id =
+      match t_ty with
+      | Ptr (Namedt tid) -> tid
+      | _ -> failwith "Invalid type for struct projection"
+    in
+    let field_ty, field_index = Printf.printf "Looking for %s.%s\n" t_id i; TypeCtxt.lookup_field_name t_id i tc in
+    let field_ty_ll = cmp_ty tc field_ty in
+    let field_index_sym = gensym (i ^ "_field_index") in
+    let proj_stream = [I (field_index_sym, Gep (t_ty, t_op, [Const 0L; Const field_index]))] in
+    (field_ty_ll, Id field_index_sym, t_stream >@ proj_stream)
 
   (* ARRAY TASK: Modify this index code to call 'oat_assert_array_length' before doing the 
      GEP calculation. This should be very straightforward, except that you'll need to use a Bitcast.

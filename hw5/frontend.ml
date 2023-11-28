@@ -196,7 +196,14 @@ let oat_alloc_array ct (t:Ast.ty) (size:Ll.operand) : Ll.ty * operand * stream =
    - make sure to calculate the correct amount of space to allocate!
 *)
 let oat_alloc_struct ct (id:Ast.id) : Ll.ty * operand * stream =
-  failwith "TODO: oat_alloc_struct"
+  let ans_id, t_id = gensym "array", gensym "raw_array" in
+  let ans_ty = cmp_ty ct @@ TRef (RStruct id) in
+  let t_ty = Ptr I64 in
+  let fields = TypeCtxt.lookup id ct in
+  let size = Const (Int64.mul (Int64.of_int (List.length fields)) 8L) in
+  ans_ty, Id ans_id, lift
+    [ t_id, Call(t_ty, Gid "oat_alloc_array", [I64, size])
+    ; ans_id, Bitcast(t_ty, Id t_id, ans_ty) ]
 
 
 let str_arr_ty s = Array(1 + String.length s, I8)

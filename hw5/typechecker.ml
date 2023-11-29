@@ -342,12 +342,10 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
   | Assn (x, y) -> 
     (* print_endline "A"; *)
     let lhs = lhs_id x in
-    (* NOTE FOR NOAH: Questo non dovrebbe essere `exist_global` a destra? *)
-    if not (exist_local lhs tc || not (exist_local lhs tc)) then type_error s "Invalid assignment";
     let ty1 = typecheck_exp tc x in
     let ty2 = typecheck_exp tc y in
     begin match ty1 with
-    | TRef (RFun (_, _)) -> if exist_global lhs tc then type_error x "Cannot assign values to function reference"
+    | TRef (RFun (_, _)) -> if (exist_global lhs tc && not (exist_local lhs tc)) then type_error x "Cannot assign values to function reference"
     | _ -> ()
     end;
     if not (subtype tc ty2 ty1) then type_error s "Invalid assignment"; (tc, false)

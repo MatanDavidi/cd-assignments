@@ -145,6 +145,42 @@ and typecheck_retty (l : 'a Ast.node) (tc : Tctxt.t) (t : Ast.ret_ty) : unit =
 
 *)
 
+
+type decls = { gvars: gdecl list; gfuncs: fdecl list; gstructs: tdecl list }
+let decls = ref { gvars = []; gfuncs = []; gstructs = [] }
+let add_gvar_decl (decl:gdecl) : unit = 
+  decls := { gvars = !decls.gvars @ [decl]; gfuncs = !decls.gfuncs; gstructs = !decls.gstructs }
+  
+let add_func_decl (decl:fdecl) : unit = 
+  decls := { gvars = !decls.gvars; gfuncs = !decls.gfuncs @ [decl]; gstructs = !decls.gstructs }
+
+let add_struct_decl (decl:tdecl) : unit = 
+  decls := { gvars = !decls.gvars; gfuncs = !decls.gfuncs; gstructs = !decls.gstructs @ [decl] }
+
+let lookup_gvar (id:id) : gdecl option =
+  let rec lookup_helper (id:id) (gdecls:gdecl list) : gdecl option =
+    match gdecls with
+    | [] -> None
+    | (gvar :: gvars) -> if gvar.name = id then Some gvar else lookup_helper id gvars
+  in
+  lookup_helper id !decls.gvars
+
+let lookup_func (id:id) : fdecl option =
+  let rec lookup_helper (id:id) (fdecls:fdecl list) : fdecl option =
+    match fdecls with
+    | [] -> None
+    | (gfunc :: gfuncs) -> if gfunc.fname = id then Some gfunc else lookup_helper id gfuncs
+  in
+  lookup_helper id !decls.gfuncs
+
+let lookup_struct (id:id) : tdecl option =
+  let rec lookup_helper (id:id) (tdecls:tdecl list) : tdecl option =
+    match tdecls with
+    | [] -> failwith ("Unable to find symbol " ^ id ^ " in global declarations")
+    | (gstruct :: gstructs) -> if fst gstruct = id then Some gstruct else lookup_helper id gstructs
+  in
+  lookup_helper id !decls.gstructs
+
 let exist_local (x : Ast.id) (tc : Tctxt.t) : bool =
   match Tctxt.lookup_local_option x tc with
   | None -> false
@@ -156,24 +192,17 @@ let exist_global (x : Ast.id) (tc : Tctxt.t) : bool =
   | Some x -> true
 
 let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
-  (* print_endline "Il pota"; *)
   match e.elt with
   | CNull x -> 
-    (* print_endline "Bella bra"; *)
     typecheck_ref e c x; TNullRef x
   | CBool _ -> 
-    (* print_endline "Bella bre"; *)
     TBool
   | CInt _ -> 
-    (* print_endline "Bella bri"; *)
     TInt
   | CStr _ -> 
-    (* print_endline "Bella bro"; *)
     TRef RString
   | Id x -> 
-    (* print_endline "Il doggo"; *)
     let id_opt = Tctxt.lookup_option x c in
-    (* print_endline "L'altro doggo"; *)
     begin match id_opt with
     | None -> type_error e ("Undefined Identifier " ^ x)
     | Some ty -> ty
@@ -182,7 +211,6 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     List.iter (fun t -> let ty = typecheck_exp c t in
     if not (subtype c ty x) then type_error t "Array element type does not match array type") y; TRef (RArray x)
   | NewArr (ty, x, y, z) ->
-    (* print_endline "Bella cane"; *)
     let ty' = typecheck_ty e c ty in
     let ty'' = typecheck_exp c x in
     if not (subtype c ty'' TInt) then
@@ -192,7 +220,6 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     if not (subtype c ty''' ty) then
     type_error z "Array initialization expression type does not match array type"; TRef (RArray ty)
   | Index (x, y) -> 
-    (* print_endline "Bella cana"; *)
     let ty = typecheck_exp c x in
     let ty' = typecheck_exp c y in
     if not (subtype c ty' TInt) then type_error y "Array index must be of type int";
@@ -201,7 +228,6 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     | _ -> type_error x "Invalid A"
     end
   | Length x -> 
-    (* print_endline "Bella cuno"; *)
     let ty = typecheck_exp c x in
     begin match ty with
     | TRef (RArray _) -> TInt
@@ -213,12 +239,10 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     | None -> type_error e ("Invalid struct reference " ^ x)
     | Some fields -> if List.length y <> List.length fields then type_error e "Invalid number of arguments"
     in
-    (* print_endline "Bella Cuneo"; *)
     begin match lookup_struct_option x c with
     | None -> type_error e ("Undefined struct symbol " ^ x)
     | Some _ -> ()
     end;
-    (* print_endline "MA SEI CERTO?!?!"; *)
     List.iter (fun (id, exp) ->
     let field_ty = typecheck_exp c exp in
     let field_opt_ty = lookup_field_option x id c in
@@ -231,10 +255,7 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     if not (subtype c field_ty declared_field_ty) then
     type_error exp "Field type does not match struct field type") y; TRef (RStruct x)
   | Proj (x, y) ->
-    (* print_endline "Bella Allola"; *)
     let ty = typecheck_exp c x in
-    (* print_endline ("Getting field " ^ (string_of_exp x) ^ " of type " ^ (string_of_ty ty)); *)
-    (* print_endline "ALloal andata"; *)
     begin match ty with
     | TRef (RStruct z) (* | TNullRef (RStruct z) *) -> 
       let field_op = lookup_field_option z y c in
@@ -248,7 +269,6 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     | TNullRef _ -> type_error x "Invalid TNullRef"
     end
   | Call (x, y) ->
-    (* print_endline "Bella Champagna"; *)
     let ty = typecheck_exp c x in
     let converter = function
     | Ast.RetVoid -> type_error x "Cannot convert RetVoid to ty"
@@ -265,7 +285,6 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     | _ -> type_error x ("Call operation is only valid on functions -- got " ^ (string_of_ty ty))
     end
   | Bop (x, y, z) ->
-    (* print_endline "Bella Castagna"; *)
     begin match x with
     |Eq | Neq -> 
       let ty = typecheck_exp c y in
@@ -285,7 +304,6 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
       if not (subtype c ty TBool) || not (subtype c ty' TBool) then type_error e "Invalid G"; TBool
     end
   | Uop (x, y) ->
-    (* print_endline "Bella Brucdo"; *)
     match x with
     | Neg | Bitnot -> 
       let ty = typecheck_exp c y in
@@ -337,10 +355,8 @@ let rec lhs_id (e:exp node) : id =
   | _ -> type_error e "Invalid J"
   
 let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.t * bool =
-  (* print_endline "I'm in (typecheck_stmt)"; *)
   match s.elt with
   | Assn (x, y) -> 
-    (* print_endline "A"; *)
     let lhs = lhs_id x in
     let ty1 = typecheck_exp tc x in
     let ty2 = typecheck_exp tc y in
@@ -350,21 +366,16 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     end;
     if not (subtype tc ty2 ty1) then type_error s "Invalid assignment"; (tc, false)
   | Decl (id, e) ->
-    (* print_endline "B"; *)
     let ty = typecheck_exp tc e in
-    (* print_endline "I polish up real"; *)
     let tc' = add_local tc id ty in
-    (* print_endline "Nice :)"; *)
     if exist_local id tc then type_error s "Invalid declaration"; (tc', false)
   | Ret e -> 
-    (* print_endline "C"; *)
     begin match e with
     | Some e -> let ty = typecheck_exp tc e in
       if not (subtype_retty tc (RetVal ty) to_ret) then type_error s "Invalid return"; (tc, true)
     | None -> if not (subtype_retty tc RetVoid to_ret) then type_error s "Invalid return"; (tc, true)
     end
   | SCall (x, y) -> 
-    (* print_endline "D"; *)
     let ty = typecheck_exp tc x in
     begin match ty with
     | TRef (RFun (arg_tys, ret_ty)) ->
@@ -380,7 +391,6 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
     | _ -> type_error x "Call operation is only valid on functions"
     end
   | If (x, y, z) -> 
-    (* print_endline "E"; *)
     let ty = typecheck_exp tc x in
     if not (subtype tc ty TBool) then type_error x "If condition must be of type bool";
     let (_, ret) = typecheck_blk tc y to_ret in
@@ -394,7 +404,6 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
         }
     *)
   | Cast (re_ty, id, exp, then_stmt_nodes, else_stmt_nodes) -> 
-    (* print_endline "F"; *)
     (* Get type of exp *)
     let exp_ty = typecheck_exp tc exp in
     (* Get `ref` part of type `ref?` *)
@@ -412,12 +421,10 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
       let (tc'', is_else_valid) = typecheck_blk tc' else_stmt_nodes to_ret in
       (tc'', is_then_valid && is_else_valid)
   | While (x, y) -> 
-    (* print_endline "G"; *)
     let ty = typecheck_exp tc x in
     if not (subtype tc ty TBool) then type_error x "While condition must be of type bool";
     let (_, ret) = typecheck_blk tc y to_ret in (tc, false)
   | For (x, y, z, w) -> 
-    (* print_endline "H"; *)
     let tc' = List.fold_left (fun tc vdecl -> typecheck_vdecl tc vdecl) tc x in
     let _ = match y with
     | Some exp -> 
@@ -435,9 +442,7 @@ and typecheck_blk (tc : Tctxt.t) (stmts : stmt node list) (to_ret : ret_ty) =
   | [] -> (tc, false)
   | [stmt] -> typecheck_stmt tc stmt to_ret
   | stmt :: rest ->
-    (* print_endline "Typechecking stmt"; *)
     let (tc', ret) = typecheck_stmt tc stmt to_ret in
-    (* print_endline "Typechecked stmt"; *)
     if ret then type_error stmt "Only the last statement in a block can return a value";
     typecheck_blk tc' rest to_ret
 
@@ -482,49 +487,12 @@ let typecheck_fdecl (tc : Tctxt.t) (f : Ast.fdecl) (l : 'a Ast.node) : unit =
   if check_dups1 dupcheck then 
     type_error l ("Duplicate argument names in function " ^ f.fname)
   else
-    (* NOTE FOR NOAH: Se tolgo questo blocco (prox. 4 righe), sblocchiamo 27 test in più :) *)
     let block = f.body in
     let tc' = List.fold_left (fun x (y, z) -> Tctxt.add_local x z y) tc args in
-    (* print_endline "Compiling block"; *)
     let (_, x) = typecheck_blk tc' block frtyp in 
     if not x then type_error l "Function must return" else ()
 
 (* creating the typchecking context ----------------------------------------- *)
-
-type decls = { gvars: gdecl list; gfuncs: fdecl list; gstructs: tdecl list }
-let decls = ref { gvars = []; gfuncs = []; gstructs = [] }
-let add_gvar_decl (decl:gdecl) : unit = 
-  decls := { gvars = !decls.gvars @ [decl]; gfuncs = !decls.gfuncs; gstructs = !decls.gstructs }
-  
-let add_func_decl (decl:fdecl) : unit = 
-  decls := { gvars = !decls.gvars; gfuncs = !decls.gfuncs @ [decl]; gstructs = !decls.gstructs }
-
-let add_struct_decl (decl:tdecl) : unit = 
-  decls := { gvars = !decls.gvars; gfuncs = !decls.gfuncs; gstructs = !decls.gstructs @ [decl] }
-
-let lookup_gvar (id:id) : gdecl option =
-  let rec lookup_helper (id:id) (gdecls:gdecl list) : gdecl option =
-    match gdecls with
-    | [] -> None
-    | (gvar :: gvars) -> if gvar.name = id then Some gvar else lookup_helper id gvars
-  in
-  lookup_helper id !decls.gvars
-
-let lookup_func (id:id) : fdecl option =
-  let rec lookup_helper (id:id) (fdecls:fdecl list) : fdecl option =
-    match fdecls with
-    | [] -> None
-    | (gfunc :: gfuncs) -> if gfunc.fname = id then Some gfunc else lookup_helper id gfuncs
-  in
-  lookup_helper id !decls.gfuncs
-
-let lookup_struct (id:id) : tdecl option =
-  let rec lookup_helper (id:id) (tdecls:tdecl list) : tdecl option =
-    match tdecls with
-    | [] -> failwith ("Unable to find symbol " ^ id ^ " in global declarations")
-    | (gstruct :: gstructs) -> if fst gstruct = id then Some gstruct else lookup_helper id gstructs
-  in
-  lookup_helper id !decls.gstructs
 
 (* The following functions correspond to the
    judgments that create the global typechecking context.

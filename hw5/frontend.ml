@@ -488,7 +488,7 @@ and cmp_stmt (tc : TypeCtxt.t) (c:Ctxt.t) (rt:Ll.ty) (stmt:Ast.stmt node) : Ctxt
   | Ast.Cast (typ, id, exp, notnull, null) ->
     let exp_ty, exp_op, exp_code = cmp_exp tc c exp in
     let null_label = gensym "null" in
-    let notnull_label = gensym "not null" in
+    let notnull_label = gensym "not_null" in
     let merge_label = gensym "merge" in
     let null_code = cmp_block tc c rt null in
     let notnull_code = cmp_block tc (Ctxt.add c id (Ptr exp_ty, Id id)) rt notnull in

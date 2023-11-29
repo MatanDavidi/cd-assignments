@@ -46,6 +46,11 @@ let typ_of_unop : Ast.unop -> Ast.ty * Ast.ty = function
       relation. We have included a template for subtype_ref to get you started.
       (Don't forget about OCaml's 'and' keyword.)
 *)
+let rec take n list =
+  match list with
+  | [] -> []
+  | head :: tail -> if n = 0 then [] else head :: take (n-1) tail
+
 let rec subtype (c : Tctxt.t) (t1 : Ast.ty) (t2 : Ast.ty) : bool =
   match t1, t2 with
   | TInt, TInt -> true
@@ -60,15 +65,7 @@ and subtype_ref (c : Tctxt.t) (t1 : Ast.rty) (t2 : Ast.rty) : bool =
   match t1, t2 with
   | RString, RString -> true
   | RArray x, RArray y -> x = y
-  | RStruct x, RStruct y -> 
-    let second = Tctxt.lookup_struct y c in
-    List.for_all (fun second -> 
-      let n = second.fieldName in 
-      let y = second.ftyp in
-      match lookup_field_option x n c with
-      | Some x -> x = y
-      | None -> false
-      ) second
+  | RStruct x, RStruct y -> if is_prefix (Tctxt.lookup_struct x c) (Tctxt.lookup_struct y c) then true else false
   | RFun (x, y), RFun (x', y') -> List.length x = List.length x' && List.for_all2 (subtype c) x' x && subtype_retty c y y'
   | _ -> false
 
@@ -79,6 +76,10 @@ and subtype_retty (c : Tctxt.t) (t1 : Ast.ret_ty) (t2 : Ast.ret_ty) : bool =
   | RetVal x, RetVal y -> subtype c x y
   | _ -> false
 
+and is_prefix list2 list1 : bool =
+  let len1 = List.length list1 in
+  let len2 = List.length list2 in
+  len1 <= len2 && (try List.for_all2 (fun x y -> x = y) list1 (take len1 list2) with Invalid_argument _ -> false)
 
 (* well-formed types -------------------------------------------------------- *)
 (* Implement a (set of) functions that check that types are well formed according

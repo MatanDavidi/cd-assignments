@@ -392,7 +392,7 @@ and cmp_exp_lhs (tc : TypeCtxt.t) (c:Ctxt.t) (e:exp node) : Ll.ty * Ll.operand *
       | Ptr (Namedt tid) -> tid
       | _ -> failwith "Invalid type for struct projection"
     in
-    let field_ty, field_index = Printf.printf "Looking for %s.%s\n" t_id i; TypeCtxt.lookup_field_name t_id i tc in
+    let field_ty, field_index = TypeCtxt.lookup_field_name t_id i tc in
     let field_ty_ll = cmp_ty tc field_ty in
     let field_index_sym = gensym (i ^ "_field_index") in
     let proj_stream = [I (field_index_sym, Gep (t_ty, t_op, [Const 0L; Const field_index]))] in
@@ -411,8 +411,9 @@ and cmp_exp_lhs (tc : TypeCtxt.t) (c:Ctxt.t) (e:exp node) : Ll.ty * Ll.operand *
       | Ptr (Struct [_; Array (_,t)]) -> t 
       | _ -> failwith "Index: indexed into non pointer" in
     let ptr_id, tmp_id = gensym "index_ptr", gensym "tmp" in
+    let assert_len_stream = [I ("", Call (Void, Gid "oat_assert_array_length", [Ptr I64, arr_op; I64, ind_op]))] in
     ans_ty, (Id ptr_id),
-    arr_code >@ ind_code >@ lift
+    arr_code >@ ind_code >@ assert_len_stream >@ lift
       [ptr_id, Gep(arr_ty, arr_op, [i64_op_of_int 0; i64_op_of_int 1; ind_op]) ]
 
    

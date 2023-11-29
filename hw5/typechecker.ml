@@ -144,6 +144,16 @@ and typecheck_retty (l : 'a Ast.node) (tc : Tctxt.t) (t : Ast.ret_ty) : unit =
 
 *)
 
+let exist_local (x : Ast.id) (tc : Tctxt.t) : bool =
+  match Tctxt.lookup_local_option x tc with
+  | None -> false
+  | Some x -> true
+
+let exist_global (x : Ast.id) (tc : Tctxt.t) : bool =
+  match Tctxt.lookup_global_option x tc with
+  | None -> false
+  | Some x -> true
+
 let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
   (* print_endline "Il pota"; *)
   match e.elt with
@@ -176,6 +186,7 @@ let rec typecheck_exp (c : Tctxt.t) (e : Ast.exp node) : Ast.ty =
     let ty'' = typecheck_exp c x in
     if not (subtype c ty'' TInt) then
     type_error x "Array size expression must be of type int";
+    if exist_local y c then type_error e "Variable already exist" else 
     let ty''' = typecheck_exp (Tctxt.add_local c y TInt) z in
     if not (subtype c ty''' ty) then
     type_error z "Array initialization expression type does not match array type"; TRef (RArray ty)
@@ -323,16 +334,6 @@ let rec lhs_id (e:exp node) : id =
   | Index (x, y) -> lhs_id x
   | Call (fname, _) -> lhs_id fname
   | _ -> type_error e "Invalid J"
-
-let exist_local (x : Ast.id) (tc : Tctxt.t) : bool =
-  match Tctxt.lookup_local_option x tc with
-  | None -> false
-  | Some x -> true
-
-let exist_global (x : Ast.id) (tc : Tctxt.t) : bool =
-  match Tctxt.lookup_global_option x tc with
-  | None -> false
-  | Some x -> true
   
 let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.t * bool =
   (* print_endline "I'm in (typecheck_stmt)"; *)
@@ -424,9 +425,10 @@ let rec typecheck_stmt (tc : Tctxt.t) (s:Ast.stmt node) (to_ret:ret_ty) : Tctxt.
       let ty = typecheck_exp tc' exp in
       if not (subtype tc' ty TBool) then type_error exp "For condition must be of type bool"
     | None -> type_error s "For condition must be of type bool"
-    in let _ = match z with
+    in let test = match z with
     | Some stmt -> typecheck_stmt tc' stmt to_ret
     | None -> type_error s "For without update statement" in
+    if snd test then type_error s "For update statement must not return" else
     let (_, ret) = typecheck_blk tc' w to_ret in (tc, false)
 
 and typecheck_blk (tc : Tctxt.t) (stmts : stmt node list) (to_ret : ret_ty) =

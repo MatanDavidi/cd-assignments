@@ -87,7 +87,26 @@ module type FACT =
 module Make (Fact : FACT) (Graph : DFA_GRAPH with type fact := Fact.t) =
   struct
 
-    let solve (g:Graph.t) : Graph.t =
-      failwith "TODO HW6: Solver.solve unimplemented"
+    (* helper function to implement the iterative dataflow algorithm *)
+    let rec helper (nodes : Graph.NodeS.t) (g : Graph.t) = 
+      match Graph.NodeS.is_empty nodes with
+      | true -> g
+      | false -> 
+        let newone = Graph.NodeS.choose nodes in
+        let predecessors = Graph.NodeS.elements (Graph.preds g newone) in
+        let facts = List.map (fun x -> Graph.out g x) predecessors in
+        let next = Graph.NodeS.remove newone nodes in
+        let combination = Fact.combine facts in
+        let out = Graph.flow g newone combination in
+        match Fact.compare out (Graph.out g newone) with
+        | 0 -> helper next g
+        | _ -> 
+          let successors = Graph.succs g newone in
+          let graph = Graph.add_fact newone out g in
+          let next_nodes = Graph.NodeS.union next successors in
+          helper next_nodes graph
+
+    let solve (g:Graph.t) : Graph.t = let nodes = Graph.nodes g in helper nodes g
+
   end
 

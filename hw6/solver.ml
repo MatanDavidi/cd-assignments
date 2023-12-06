@@ -88,7 +88,7 @@ module Make (Fact : FACT) (Graph : DFA_GRAPH with type fact := Fact.t) =
   struct
 
     (* helper function to implement the iterative dataflow algorithm *)
-    let rec helper (nodes : Graph.NodeS.t) (g : Graph.t) = 
+    let rec helper (nodes : Graph.NodeS.t) (g : Graph.t) : Graph.t = 
       match Graph.NodeS.is_empty nodes with
       | true -> g
       | false -> 

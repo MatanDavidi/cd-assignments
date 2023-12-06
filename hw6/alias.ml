@@ -34,7 +34,11 @@ type fact = SymPtr.t UidM.t
 
  *)
 let insn_flow ((u,i):uid * insn) (d:fact) : fact =
-  failwith "Alias.insn_flow unimplemented"
+  match i with
+  | Alloca _ -> UidM.add u SymPtr.Unique d
+  | Load _  -> UidM.add u SymPtr.MayAlias d
+  | Binop _ | Icmp _ -> d
+  | _ -> failwith "not yet implemented"
 
 
 (* The flow function across terminators is trivial: they never change alias info *)
@@ -68,8 +72,17 @@ module Fact =
        It may be useful to define a helper function that knows how to take the
        join of two SymPtr.t facts.
     *)
-    let combine (ds:fact list) : fact =
-      failwith "Alias.Fact.combine not implemented"
+  let helper (a : SymPtr.t) (b : SymPtr.t) : SymPtr.t =
+  match a, b with
+  | SymPtr.MayAlias, _ | _, SymPtr.MayAlias -> SymPtr.MayAlias
+  | _ -> SymPtr.Unique
+
+let combine (ds:fact list) : fact =
+  List.fold_left (fun acc d -> UidM.merge (fun _ a b ->
+    match a, b with
+    | Some v, None | None, Some v -> Some v
+    | Some v1, Some v2 -> Some (helper v1 v2)
+    | None, None -> None) acc d) UidM.empty ds
   end
 
 (* instantiate the general framework ---------------------------------------- *)

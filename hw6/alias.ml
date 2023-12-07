@@ -33,13 +33,29 @@ type fact = SymPtr.t UidM.t
    - Other instructions do not define pointers
 
  *)
-let insn_flow ((u,i):uid * insn) (d:fact) : fact =
-  match i with
-  | Alloca _ -> UidM.add u SymPtr.Unique d
-  | Load _  -> UidM.add u SymPtr.MayAlias d
-  | Binop _ | Icmp _ -> d
-  | _ -> failwith "not yet implemented"
 
+let is_unique ptr fact =
+  try
+    match UidM.find ptr fact with
+    | SymPtr.Unique -> true
+    | _ -> false
+  with Not_found -> false
+
+let insn_flow ((u,i):uid * insn) (d:fact) : fact =
+  begin match i with
+  | Alloca _ -> UidM.add u SymPtr.Unique d
+  | _ -> let d' = (if is_unique u d then UidM.remove u d else d) in
+    begin match i with
+    | Call (_,_,args) -> List.fold_left (fun acc (t,x) ->
+      match t, x with
+      | Ptr _, Id id -> UidM.add id SymPtr.MayAlias acc
+      | _ -> acc) d args
+    | Bitcast (_, Id id, _) -> UidM.add u SymPtr.MayAlias (UidM.add id SymPtr.MayAlias (UidM.remove id d))
+    | Gep _ -> UidM.add u SymPtr.MayAlias d'
+    | Load (Ptr (Ptr x), _) -> UidM.add u SymPtr.MayAlias d'
+    | _ -> d
+    end
+  end
 
 (* The flow function across terminators is trivial: they never change alias info *)
 let terminator_flow t (d:fact) : fact = d

@@ -24,7 +24,38 @@ open Datastructures
 let dce_block (lb:uid -> Liveness.Fact.t) 
               (ab:uid -> Alias.fact)
               (b:Ll.block) : Ll.block =
-  failwith "Dce.dce_block unimplemented"
+(* TODO: THIS FUNCTION IS NOT COMPLETELY CORRECT! 13/15 *)
+  let is_id_non_aliased id = 
+    try
+    not (UidM.mem id (ab id))
+    with Not_found -> true
+  in
+  let is_id_dead id = 
+    try
+    not (UidS.mem id (lb id))
+    with Not_found -> false
+  in
+  let is_ins_dead = 
+    fun ((id, ins):(uid * insn)) : bool ->
+      begin match ins with
+      | Binop _
+      | Alloca _
+      | Load _
+      | Icmp _
+      | Bitcast _
+      | Gep _ -> is_id_dead id
+      | Store (_, _, op2) -> 
+        begin match op2 with
+        | Gid did | Id did -> is_id_non_aliased did && is_id_dead did
+        | _ -> failwith "Cannot store into null or constant"
+        end
+      | Call _ -> false
+      end
+  in
+  {
+    insns = List.filter (fun a -> not (is_ins_dead a)) b.insns;
+    term = b.term
+  }
 
 let run (lg:Liveness.Graph.t) (ag:Alias.Graph.t) (cfg:Cfg.t) : Cfg.t =
 

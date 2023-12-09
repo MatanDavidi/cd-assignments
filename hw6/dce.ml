@@ -24,16 +24,11 @@ open Datastructures
 let dce_block (lb:uid -> Liveness.Fact.t) 
               (ab:uid -> Alias.fact)
               (b:Ll.block) : Ll.block =
-(* TODO: THIS FUNCTION IS NOT COMPLETELY CORRECT! 13/15 *)
-  let is_id_non_aliased id = 
-    try
-    not (UidM.mem id (ab id))
-    with Not_found -> true
+  let is_id_non_aliased m_id s_id = 
+    UidM.find_opt m_id (ab s_id) <> Some Alias.SymPtr.MayAlias
   in
-  let is_id_dead id = 
-    try
-    not (UidS.mem id (lb id))
-    with Not_found -> false
+  let is_id_dead m_id s_id = 
+      not (UidS.mem m_id (lb s_id))
   in
   let is_ins_dead = 
     fun ((id, ins):(uid * insn)) : bool ->
@@ -43,11 +38,11 @@ let dce_block (lb:uid -> Liveness.Fact.t)
       | Load _
       | Icmp _
       | Bitcast _
-      | Gep _ -> is_id_dead id
+      | Gep _ -> is_id_dead id id
       | Store (_, _, op2) -> 
         begin match op2 with
-        | Gid did | Id did -> is_id_non_aliased did && is_id_dead did
-        | _ -> failwith "Cannot store into null or constant"
+        | Id did -> is_id_non_aliased did id && is_id_dead did id
+        | _ -> false
         end
       | Call _ -> false
       end

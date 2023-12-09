@@ -37,7 +37,60 @@ type fact = SymConst.t UidM.t
    - Uid of all other instructions are NonConst-out
  *)
 let insn_flow (u,i:uid * insn) (d:fact) : fact =
-  failwith "Constprop.insn_flow unimplemented"
+  match i with
+  | Binop (bop, _, op1, op2) -> 
+    begin match op1 with
+    | Const val1 -> 
+      begin match op2 with
+      | Const val2 ->
+        let new_val = 
+          begin match bop with
+          | Add -> Int64.add val1 val2
+          | Sub -> Int64.sub val1 val2
+          | Mul -> Int64.mul val1 val2
+          | Shl -> Int64.shift_left val1 (Int64.to_int val2)
+          | Lshr -> Int64.shift_right_logical val1 (Int64.to_int val2)
+          | Ashr -> Int64.shift_right val1 (Int64.to_int val2)
+          | And -> Int64.logand val1 val2
+          | Or -> Int64.logor val1 val2
+          | Xor -> Int64.logxor val1 val2 
+          end
+        in
+        UidM.add u (SymConst.Const new_val) d
+      | _ -> UidM.add u SymConst.NonConst d
+      end
+    | _ -> UidM.add u SymConst.NonConst d
+    end
+  | Icmp (cnd, _, op1, op2) -> 
+    begin match op1 with
+    | Const val1 -> 
+      begin match op2 with
+      | Const val2 -> 
+        let new_val = 
+          begin match cnd with
+          | Eq -> val1 == val2
+          | Ne -> val1 <> val2
+          | Slt -> val1 < val2
+          | Sle -> val1 <= val2
+          | Sgt -> val1 > val2
+          | Sge -> val1 >= val2
+          end
+        in
+        UidM.add u (SymConst.Const (if new_val then 1L else 0L)) d
+      | _ -> UidM.add u SymConst.NonConst d
+      end
+    | _ -> UidM.add u SymConst.NonConst d
+    end
+  | Store (ty, _, _)
+  | Call (ty, _, _) ->
+    begin match ty with
+    | Void -> UidM.add u SymConst.UndefConst d
+    | _ -> UidM.add u SymConst.NonConst d
+    end
+  | Alloca _
+  | Load _
+  | Bitcast _
+  | Gep _ -> UidM.add u SymConst.NonConst d
 
 (* The flow function across terminators is trivial: they never change const info *)
 let terminator_flow (t:terminator) (d:fact) : fact = d

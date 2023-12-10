@@ -27,7 +27,16 @@ module SymConst =
    to integer constants *)
 type fact = SymConst.t UidM.t
 
-
+let translate_op (op:Ll.operand) (d:fact) : Ll.operand =
+  begin match op with
+  | Id id | Gid id -> 
+    let op_res = UidM.find_opt id d in
+    begin match op_res with
+    | Some (SymConst.Const a) -> Ll.Const a
+    | _ -> op
+    end
+  | _ -> op
+  end
 
 (* flow function across Ll instructions ------------------------------------- *)
 (* - Uid of a binop or icmp with const arguments is constant-out
@@ -39,6 +48,8 @@ type fact = SymConst.t UidM.t
 let insn_flow (u,i:uid * insn) (d:fact) : fact =
   match i with
   | Binop (bop, _, op1, op2) -> 
+    let op1 = translate_op op1 d in
+    let op2 = translate_op op2 d in
     begin match op1 with
     | Const val1 -> 
       begin match op2 with
@@ -62,13 +73,15 @@ let insn_flow (u,i:uid * insn) (d:fact) : fact =
     | _ -> UidM.add u SymConst.NonConst d
     end
   | Icmp (cnd, _, op1, op2) -> 
+    let op1 = translate_op op1 d in
+    let op2 = translate_op op2 d in
     begin match op1 with
     | Const val1 -> 
       begin match op2 with
       | Const val2 -> 
         let new_val = 
           begin match cnd with
-          | Eq -> val1 == val2
+          | Eq -> val1 = val2
           | Ne -> val1 <> val2
           | Slt -> val1 < val2
           | Sle -> val1 <= val2
@@ -81,7 +94,11 @@ let insn_flow (u,i:uid * insn) (d:fact) : fact =
       end
     | _ -> UidM.add u SymConst.NonConst d
     end
-  | Store (ty, _, _)
+  | Store (ty, _, _) -> 
+    begin match ty with
+    | Void -> UidM.add u SymConst.UndefConst d
+    | _ -> d
+    end
   | Call (ty, _, _) ->
     begin match ty with
     | Void -> UidM.add u SymConst.UndefConst d
@@ -116,7 +133,18 @@ module Fact =
     (* The constprop analysis should take the meet over predecessors to compute the
        flow into a node. You may find the UidM.merge function useful *)
     let combine (ds:fact list) : fact = 
-      failwith "Constprop.Fact.combine unimplemented"
+      let combine_helper (a: SymConst.t) (b: SymConst.t) : SymConst.t =
+        match (a, b) with
+        | (Const a, _) | (_, Const a) -> Const a
+        | _ -> NonConst
+      in
+      List.fold_left (fun acc d -> 
+        UidM.merge (fun _ a b ->
+          match a, b with
+          | Some v, None | None, Some v -> Some v
+          | Some v1, Some v2 -> Some (combine_helper v1 v2)
+          | None, None -> None
+        ) acc d) UidM.empty ds
   end
 
 (* instantiate the general framework ---------------------------------------- *)
@@ -138,6 +166,12 @@ let analyze (g:Cfg.t) : Graph.t =
   let fg = Graph.of_cfg init cp_in g in
   Solver.solve fg
 
+let block_helper (l:uid) (cb:uid -> fact) (cfg:Cfg.t) ((u, i):(uid * insn)) : Cfg.t =
+  let facts = cb l in
+  (* TODO: THIS IS WRONG. HOW DO I FIX THIS??? *)
+  let new_facts = insn_flow (u, i) facts in
+  let updated_block = failwith "Metti qualcosa qui plz" in
+  Cfg.add_block l updated_block cfg
 
 (* run constant propagation on a cfg given analysis results ----------------- *)
 (* HINT: your cp_block implementation will probably rely on several helper 
@@ -149,7 +183,7 @@ let run (cg:Graph.t) (cfg:Cfg.t) : Cfg.t =
   let cp_block (l:Ll.lbl) (cfg:Cfg.t) : Cfg.t =
     let b = Cfg.block cfg l in
     let cb = Graph.uid_out cg l in
-    failwith "Constprop.cp_block unimplemented"
+    List.fold_left (block_helper l cb) cfg b.insns
   in
 
   LblS.fold cp_block (Cfg.nodes cfg) cfg

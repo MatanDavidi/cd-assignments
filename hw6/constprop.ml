@@ -167,7 +167,7 @@ let analyze (g:Cfg.t) : Graph.t =
   Solver.solve fg
 
 let block_helper (l:uid) (cb:uid -> fact) (cfg:Cfg.t) ((u, i):(uid * insn)) : Cfg.t =
-  let facts = cb l in
+  let facts = cb u in
   (* TODO: THIS IS WRONG. HOW DO I FIX THIS??? *)
   let new_facts = insn_flow (u, i) facts in
   let updated_block = failwith "Metti qualcosa qui plz" in

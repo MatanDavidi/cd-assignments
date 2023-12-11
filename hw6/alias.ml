@@ -44,17 +44,18 @@ let is_unique ptr fact =
 let insn_flow ((u,i):uid * insn) (d:fact) : fact =
   begin match i with
   | Alloca _ -> UidM.add u SymPtr.Unique d
-  | _ -> let d' = (if is_unique u d then UidM.remove u d else d) in
-    begin match i with
-    | Call (_,_,args) -> List.fold_left (fun acc (t,x) ->
-      match t, x with
-      | Ptr _, Id id -> UidM.add id SymPtr.MayAlias acc
-      | _ -> acc) d args
-    | Bitcast (_, Id id, _) -> UidM.add u SymPtr.MayAlias (UidM.add id SymPtr.MayAlias (UidM.remove id d))
-    | Gep _ -> UidM.add u SymPtr.MayAlias d'
-    | Load (Ptr (Ptr x), _) -> UidM.add u SymPtr.MayAlias d'
-    | _ -> d
-    end
+  | Load (Ptr (Ptr x), _) -> UidM.add u SymPtr.MayAlias d
+  | Store (Ptr x, Id u', _) -> UidM.add u' SymPtr.MayAlias d
+  | Call (ty,_,args) -> List.fold_left (fun acc (t,x) ->
+    match t, x with
+    | Ptr x, Id id -> UidM.add id SymPtr.MayAlias acc
+    | _ -> acc) d ((ty, Id u)::args)
+  | Bitcast (Ptr _, Id u', Ptr _) -> UidM.add u SymPtr.MayAlias (UidM.add u' SymPtr.MayAlias d)
+  | Bitcast (Ptr _, Id u', _) -> UidM.add u' SymPtr.MayAlias d
+  | Bitcast (_, _, Ptr _) -> UidM.add u SymPtr.MayAlias d
+  | Gep (Ptr _, Id u', _) -> UidM.add u SymPtr.MayAlias (UidM.add u' SymPtr.MayAlias d)
+  | Gep _ -> UidM.add u SymPtr.MayAlias d
+  | _ -> d
   end
 
 (* The flow function across terminators is trivial: they never change alias info *)
@@ -94,8 +95,8 @@ module Fact =
   | _ -> SymPtr.Unique
 
 let combine (ds:fact list) : fact =
-  List.fold_left (fun acc d -> UidM.merge (fun _ a b ->
-    match a, b with
+  List.fold_left (fun acc d -> UidM.merge (fun _ x y ->
+    match x, y with
     | Some v, None | None, Some v -> Some v
     | Some v1, Some v2 -> Some (helper v1 v2)
     | None, None -> None) acc d) UidM.empty ds

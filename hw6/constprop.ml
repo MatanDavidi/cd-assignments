@@ -166,12 +166,41 @@ let analyze (g:Cfg.t) : Graph.t =
   let fg = Graph.of_cfg init cp_in g in
   Solver.solve fg
 
-let block_helper (l:uid) (cb:uid -> fact) (cfg:Cfg.t) ((u, i):(uid * insn)) : Cfg.t =
-  let facts = cb u in
-  (* TODO: THIS IS WRONG. HOW DO I FIX THIS??? *)
-  let new_facts = insn_flow (u, i) facts in
-  let updated_block = failwith "Metti qualcosa qui plz" in
-  Cfg.add_block l updated_block cfg
+  let helper (id:uid) (d:fact) : Ll.operand =
+    let op = UidM.find_opt id d in
+    begin match op with
+    | Some (SymConst.Const val1) -> Const val1
+    | _ -> Id id
+    end
+
+(* helper functions for running constant propagation ------------------------- *)
+let ins_helper (uid : uid) (t : terminator) (cb : uid -> Fact.t) ((id,insn) : Ll.uid * Ll.insn) : (uid * Ll.insn) = 
+  let new_ins =
+  begin match insn with
+  | Binop (bop, ty, Id id1, Id id2) -> Binop(bop, ty, helper id1 (cb id), helper id2 (cb id))
+  | Binop (bop, ty, Id id1, op2) -> Binop(bop, ty, helper id1 (cb id), op2)
+  | Binop (bop, ty, op1, Id id2) -> Binop(bop, ty, op1, helper id2 (cb id))
+  | Call (ty, op, ops) -> 
+    Call (ty, op, List.map (fun (x, y) -> 
+      match y with
+      | Id id1 -> (x, helper id1 (cb id))
+      | _ -> (x, y)
+    ) ops)
+  | Bitcast (ty1, Id id1, ty2) -> Bitcast (ty1, helper id1 (cb id), ty2)
+  | Store (ty, Id id1, op) -> Store (ty, helper id1 (cb id), op)
+  | Icmp (cnd, ty, Id id1, Id id2) -> Icmp (cnd, ty, helper id1 (cb id), helper id2 (cb id))
+  | Icmp (cnd, ty, Id id1, op2) -> Icmp (cnd, ty, helper id1 (cb id), op2)
+  | Icmp (cnd, ty, op1, Id id2) -> Icmp (cnd, ty, op1, helper id2 (cb id))
+  | _ -> insn
+  end
+  in (id, new_ins)
+
+let term_helper (uid : uid) (t : terminator) (cb : uid -> Fact.t) : (uid*Ll.terminator) = 
+  begin match t with 
+  | Ret (ty, Some (Id id)) -> (uid, Ret(ty, Some (helper id (cb uid))))
+  | Cbr (Id id, lbl_1, lbl_2) -> (uid, Cbr(helper id (cb uid), lbl_1, lbl_2))
+  | _ -> (uid, t)           
+  end 
 
 (* run constant propagation on a cfg given analysis results ----------------- *)
 (* HINT: your cp_block implementation will probably rely on several helper 
@@ -183,7 +212,8 @@ let run (cg:Graph.t) (cfg:Cfg.t) : Cfg.t =
   let cp_block (l:Ll.lbl) (cfg:Cfg.t) : Cfg.t =
     let b = Cfg.block cfg l in
     let cb = Graph.uid_out cg l in
-    List.fold_left (block_helper l cb) cfg b.insns
+    let (uid, typ) = b.term in 
+    Cfg.add_block l {insns = List.map (ins_helper uid typ cb) b.insns; term = term_helper uid typ cb;} cfg
   in
 
   LblS.fold cp_block (Cfg.nodes cfg) cfg

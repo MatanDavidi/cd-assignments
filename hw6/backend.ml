@@ -742,6 +742,7 @@ module UidS = Datastructures.UidS
 module UidM = Datastructures.UidM
 
 type graph = (UidS.t * Alloc.loc list) UidM.t
+type edge = uid * uid
 
 let better_layout (f:Ll.fdecl) (live:liveness) : layout =
   let n_spill = ref 0 in
@@ -761,7 +762,7 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
       UidM.add uid (UidS.empty, []) m
     ) initial_nodes UidM.empty 
   in
-  let add_edges (graph:graph) (edges_list:(uid * uid) list) = 
+  let add_edges (graph:graph) (edges_list:edge list) = 
     List.fold_left (
       fun (graph:graph) (a, b: uid * uid) -> (
         UidM.update (
@@ -801,13 +802,13 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
       []
     else
       UidS.fold (
-        fun (var_uid:uid) (edges_list:(uid * uid) list) : (uid * uid) list ->
+        fun (var_uid:uid) (edges_list:edge list) : edge list ->
           let rest = UidS.remove var_uid live_vars in
           ((UidS.fold (
             fun loc acc -> (var_uid, loc)::acc
           ) rest []) @ edges_list)
       ) live_vars []
-  in 
+  in
   let add_block_edges (graph:graph) (block:block) (locs : (uid * Alloc.loc) list) =
     let (_, assign_insns) = List.partition (fun (_, ins) -> (insn_assigns ins)) block.insns in 
     let new_graph = List.fold_left (

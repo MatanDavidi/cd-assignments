@@ -759,12 +759,12 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
   let block, (block_lbls:((uid * block) list)) = f.f_cfg in
   (* This is the set of nodes, one for each UID (i.e. "variable") in the block *)
   let initial_nodes:UidS.t =
-  let uid_set_params = UidS.of_list (f.f_param) in 
-  let uids_of_block = block_uids block in
-  let all_uids = UidS.union uid_set_params uids_of_block in
-    List.fold_left (fun (curr_uids:UidS.t) (_, block:uid * block) : UidS.t -> 
-      UidS.union (block_uids block) curr_uids
-    ) all_uids block_lbls
+    let uid_set_params = UidS.of_list (f.f_param) in 
+    let uids_of_block = block_uids block in
+    let all_uids = UidS.union uid_set_params uids_of_block in
+      List.fold_left (fun (curr_uids:UidS.t) (_, block:uid * block) : UidS.t -> 
+        UidS.union (block_uids block) curr_uids
+      ) all_uids block_lbls
   in
   (* This is the disconnected graph (i.e. all nodes have deg 0) *)
   let initial_graph:graph = UidS.fold (
@@ -966,8 +966,8 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
 
   The function returns a list of tuples where each tuple contains a node and its corresponding allocation.
   *)
-  let rec color_graph (colorless_nodes:(lbl * (UidS.t * Alloc.loc list)) list) (allocs_acc: ((uid * Alloc.loc) list)) =
-    match colorless_nodes with 
+  let rec color_graph (uncolored_nodes:(lbl * (UidS.t * Alloc.loc list)) list) (allocs_acc: ((uid * Alloc.loc) list)) =
+    match uncolored_nodes with 
     | [] -> allocs_acc
     | ((node, (neighbors, node_allocs)) :: colorless_rest) ->
       let used_allocs = UidS.fold (

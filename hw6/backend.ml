@@ -839,13 +839,13 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
       ) uid graph
     | None -> graph
   in
-  let allocate_f_params (graph:graph) : graph * int = 
+  let assign_indices_to_function_params (graph:graph) : graph * int = 
     List.fold_left (
       fun (graph, i : graph * int) (uid:uid) : (graph * int) -> 
         (allocate_to_preference_graph graph uid i, (i + 1))
     ) (graph, 0) f.f_param
   in
-  let allocate_live_f_args (graph:graph) : graph =
+  let add_edges_for_live_function_args (graph:graph) : graph =
     let params = UidS.of_list (f.f_param) in
     let (entry, _) = f.f_cfg in
     let uid =
@@ -869,14 +869,14 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
   let create_graph : (uid * Alloc.loc) list * graph =
     let (entry_block, blocks_list) = f.f_cfg in
     let (allocs_list, graph : (uid * Alloc.loc) list * graph) = 
-      add_block_edges (allocate_live_f_args initial_graph) entry_block [] 
+      add_block_edges (add_edges_for_live_function_args initial_graph) entry_block [] 
     in
     let allocations, new_graph = List.fold_left (
       fun (curr_allocs, curr_graph : (lbl * Alloc.loc) list * graph) (lbl, block : lbl * block) -> 
         add_block_edges curr_graph block ((lbl, Alloc.LLbl (Platform.mangle lbl))::curr_allocs)
     ) (allocs_list, graph) blocks_list 
     in
-    allocations, fst (allocate_f_params new_graph)
+    allocations, fst (assign_indices_to_function_params new_graph)
   in
   (* Remove a node from the graph *)
   let delete_node (node: uid * (UidS.t * Alloc.loc list)) (graph:graph) = 

@@ -745,13 +745,13 @@ module UidM = Datastructures.UidM
  
 let better_layout (f:Ll.fdecl) (live:liveness) : layout =
   let blck_uid b = List.fold_left (fun x (y, z) ->if (insn_assigns z) then UidS.add y x else x) UidS.empty b.insns in 
-  let nodes = let blck, lb_blckl = f.f_cfg in
-  List.fold_left (fun x (_, block) -> UidS.union (blck_uid block) x) (UidS.union (UidS.of_list (f.f_param)) (blck_uid blck) ) lb_blckl in 
   let n_spill = ref 0 in
   let spiller() = (incr n_spill; Alloc.LStk (- !n_spill)) in 
-  let gettwos s = if UidS.is_empty s then [] else UidS.fold (fun x y ->  let res = UidS.remove x s in ((UidS.fold (fun w acc -> (x,w)::acc) res []) @ y) ) s [] in 
-  let initialgraph = UidS.fold (fun x y -> UidM.add x (UidS.empty, []) y) nodes UidM.empty in 
+  let nodes = let blck, lb_blckl = f.f_cfg in
+  List.fold_left (fun x (_, block) -> UidS.union (blck_uid block) x) (UidS.union (UidS.of_list (f.f_param)) (blck_uid blck) ) lb_blckl in 
   let add_edges graph x = List.fold_left (fun f (y,z) -> (UidM.update (fun (a, b) -> (UidS.add z a), b) y f)) graph x in
+  let initialgraph = UidS.fold (fun x y -> UidM.add x (UidS.empty, []) y) nodes UidM.empty in 
+  let gettwos s = if UidS.is_empty s then [] else UidS.fold (fun x y -> (UidS.fold (fun w acc -> (x,w)::acc) (UidS.remove x s) []) @ y) s [] in 
   let rec helper graph list i = 
     match arg_reg i with
     | Some c -> 
@@ -763,64 +763,65 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
         | _ -> helper graph xs (i+1)
         end 
       end 
-      | None ->  graph
+    | None ->  graph
   in let prefixadder graph (_, i) = 
     match i with 
     | Call (_, _, list) -> helper graph list 0 
     | _ -> graph 
-  in let edges_blk graph b (x : (uid * Alloc.loc) list) =
-      let _, empty = List.partition (fun (_, i) -> (insn_assigns i)) b.insns in 
-      let newgraph = List.fold_left (fun graph (id, i) -> prefixadder (add_edges graph (gettwos (live.live_in id))) (id, i)) graph b.insns in
-      let newone = List.fold_left (fun xs (id, _) -> (id, Alloc.LVoid)::xs) x empty in (newone, (add_edges newgraph (gettwos (live.live_in (fst(b.term)))))) in
-      let addArg graph id i =
-        match arg_reg i with 
-        |Some c -> UidM.update (fun (a, b) -> (a, (Alloc.LReg c)::b)) id graph 
-        |None -> graph
-    in let func graph = 
-      List.fold_left (fun (graph, i) id -> (addArg graph id i, i+1)) (graph,0) f.f_param
-    in let argslive graph =
+  in let edges_blk graph b (x : (uid * Alloc.loc) list) = 
+    let newgraph = List.fold_left (fun graph (id, i) -> prefixadder (add_edges graph (gettwos (live.live_in id))) (id, i)) graph b.insns in
+    let _, empty = List.partition (fun (_, i) -> (insn_assigns i)) b.insns in
+    let newone = List.fold_left (fun xs (id, _) -> (id, Alloc.LVoid)::xs) x empty in (newone, (add_edges newgraph (gettwos (live.live_in (fst(b.term)))))) in
+    let addArg graph id i =
+      match arg_reg i with 
+      |Some c -> UidM.update (fun (a, b) -> (a, (Alloc.LReg c)::b)) id graph 
+      |None -> graph
+  in let argslive graph =
       let (entry, _) = f.f_cfg in
       let id = if (List.length entry.insns = 0) then fst(entry.term) else fst (List.hd (entry.insns)) in
       let dead = UidS.diff (UidS.of_list (f.f_param)) (live.live_in id) in 
       let edges = UidS.fold (fun x y -> UidS.fold (fun z a -> (z, x)::(x, z)::a) dead y) (live.live_in id) [] in add_edges graph edges 
-    in let grapher = 
-      let (start, labels) = f.f_cfg in 
-      let x, y = List.fold_left (fun (x,graph) (l, block) -> edges_blk graph block ((l, Alloc.LLbl (Platform.mangle l))::x)) (edges_blk (argslive initialgraph) start []) labels in (x, fst(func y)) 
-    in let delete e graph =  UidM.map (fun (a, b) -> (UidS.remove (fst e) a), b) (UidM.remove (fst e) graph) in 
-    let rec simplifier graph (color) (x : (uid * Alloc.loc) list) =
-      if UidM.is_empty graph then (color, x) else
-      let less = UidM.filter (fun y (a, b) -> (UidS.cardinal a) < 7 ) graph in
-      if UidM.is_empty less then let p = UidM.filter (fun y (a,b) -> (List.length b) = 0) graph in 
-        let e = if (UidM.is_empty p) then UidM.choose graph else UidM.choose p in 
-        simplifier (delete e graph) color ((fst e, spiller())::x)
-      else 
-       let noprefix = UidM.filter (fun y (a, b) -> (List.length b) = 0) less in
-           let e = if(UidM.is_empty noprefix) then UidM.choose less else UidM.choose noprefix in
-           simplifier (delete e graph) (e::color) x
-      in let rec color colorless (y : ((uid * Alloc.loc) list)) = 
-      match colorless with 
-      | [] -> y 
-      | (x::xs) -> 
-        let used_ones = UidS.fold (fun id z ->  
-          match List.assoc_opt id y with 
-          | Some loc -> LocSet.add loc z 
-          | None -> z 
-        ) (fst(snd x)) (LocSet.empty) in 
-        let available_ones = LocSet.diff (LocSet.(caller_save |> remove (Alloc.LReg Rax) |> remove (Alloc.LReg Rcx))) used_ones in
-        if LocSet.is_empty available_ones then raise (Failure "foo");
-        let prefix = List.fold_left (fun option location -> 
-          match option with 
-          | Some u -> Some u 
-          | None -> if LocSet.mem location available_ones then Some location else None
-        ) None (snd(snd x)) in let finallocation = 
-          match prefix with 
-          | Some x -> x 
-          | None -> LocSet.choose available_ones 
+  in let func graph = 
+      List.fold_left (fun (graph, i) id -> (addArg graph id i, i+1)) (graph,0) f.f_param
+  in let delete e graph =  UidM.map (fun (a, b) -> (UidS.remove (fst e) a), b) (UidM.remove (fst e) graph) 
+  in let rec simplifier graph color (x : (uid * Alloc.loc) list) =
+      if UidM.is_empty graph then (color, x) 
+      else let less = UidM.filter (fun y (a, b) -> (UidS.cardinal a) < 7 ) graph in
+        if UidM.is_empty less then let p = UidM.filter (fun y (a,b) -> (List.length b) = 0) graph in 
+          let e = 
+          if (UidM.is_empty p) then UidM.choose graph 
+          else UidM.choose p in simplifier (delete e graph) color ((fst e, spiller())::x)
+        else let noprefix = UidM.filter (fun y (a, b) -> (List.length b) = 0) less in
+          let e = 
+          if (UidM.is_empty noprefix) then UidM.choose less 
+          else UidM.choose noprefix in simplifier (delete e graph) (e::color) x
+  in let grapher = 
+    let (start, labels) = f.f_cfg in 
+    let x, y = List.fold_left (fun (x,graph) (l, block) -> edges_blk graph block ((l, Alloc.LLbl (Platform.mangle l))::x)) (edges_blk (argslive initialgraph) start []) labels in (x, fst(func y)) 
+  in let rec color colorless (y : ((uid * Alloc.loc) list)) = 
+    match colorless with 
+    | [] -> y 
+    | (x::xs) -> 
+      let used_ones = UidS.fold (fun id z ->  
+        match List.assoc_opt id y with 
+        | Some loc -> LocSet.add loc z 
+        | None -> z 
+      ) (fst(snd x)) (LocSet.empty) in 
+      let available_ones = LocSet.diff (LocSet.(caller_save |> remove (Alloc.LReg Rax) |> remove (Alloc.LReg Rcx))) used_ones in
+      if LocSet.is_empty available_ones then raise (Failure "foo");
+      let prefix = List.fold_left (fun option location -> 
+        match option with 
+        | Some u -> Some u 
+        | None -> if LocSet.mem location available_ones then Some location else None
+      ) None (snd(snd x)) in let finallocation = 
+        match prefix with 
+        | Some x -> x 
+        | None -> LocSet.choose available_ones 
         in color xs ((fst x , finallocation) :: y) 
-      in let result = 
-      let z, graph =  grapher in 
-      let colorless, l = simplifier graph [] z in 
-      color colorless l in {uid_loc = (fun x -> List.assoc x result); spill_bytes = 8 * !n_spill} 
+    in let result = 
+    let z, graph =  grapher in 
+    let colorless, l = simplifier graph [] z in 
+    color colorless l in {uid_loc = (fun x -> List.assoc x result); spill_bytes = 8 * !n_spill} 
 
 (* register allocation options ---------------------------------------------- *)
 (* A trivial liveness analysis that conservatively says that every defined

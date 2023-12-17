@@ -746,19 +746,25 @@ type edge = uid * uid
 
  
 let better_layout (f:Ll.fdecl) (live:liveness) : layout =
-  let blck_uid b = List.fold_left (fun x (y, z) ->if (insn_assigns z) then UidS.add y x else x) UidS.empty b.insns in 
-  let nodes = let blck, lb_blckl = f.f_cfg in
-  List.fold_left (fun x (_, block) -> UidS.union (blck_uid block) x) (UidS.union (UidS.of_list (f.f_param)) (blck_uid blck) ) lb_blckl in 
   let n_spill = ref 0 in
-  let spill = (incr n_spill; Alloc.LStk (- !n_spill)) in
+  let spill () = (incr n_spill; Alloc.LStk (- !n_spill)) in
   (* Get all UIDs inside the block *)
   let block_uids (block:block) : UidS.t = 
-    List.fold_left (fun (uid_set:UidS.t) ((uid, insn):uid * insn) : UidS.t -> if insn_assigns insn then UidS.add uid uid_set else uid_set) UidS.empty block.insns 
+    List.fold_left (fun (uid_set:UidS.t) ((uid, insn):uid * insn) : UidS.t -> 
+      if insn_assigns insn then 
+        UidS.add uid uid_set 
+      else uid_set
+    ) UidS.empty block.insns 
   in
   let block, (block_lbls:((uid * block) list)) = f.f_cfg in
   (* This is the set of nodes, one for each UID (i.e. "variable") in the block *)
-  let initial_nodes:UidS.t = 
-    List.fold_left (fun s (_, b) -> UidS.union (block_uids b) s) (UidS.union (UidS.of_list (f.f_param)) (block_uids block) ) block_lbls
+  let initial_nodes:UidS.t =
+  let uid_set_params = UidS.of_list (f.f_param) in 
+  let uids_of_block = block_uids block in
+  let all_uids = UidS.union uid_set_params uids_of_block in
+    List.fold_left (fun (curr_uids:UidS.t) (_, block:uid * block) : UidS.t -> 
+      UidS.union (block_uids block) curr_uids
+    ) all_uids block_lbls
   in
   (* This is the disconnected graph (i.e. all nodes have deg 0) *)
   let initial_graph:graph = UidS.fold (
@@ -776,7 +782,7 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
       )
     ) graph edges_list 
   in
-  let rec allocate_func_args (graph:graph) (op_list:(ty * Ll.operand) list) (i:int) =
+  let rec allocate_func_args (graph:graph) (op_list:(ty * Ll.operand) list) (i:int) : graph =
     match (arg_reg i) with
     | Some l ->
       begin match op_list with
@@ -801,7 +807,7 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
     | _ -> graph
   in
   (* Get the edges to add to the graph based on liveness information *)
-  let get_new_edges (live_vars:UidS.t) =
+  let get_new_edges (live_vars:UidS.t) : edge list =
     if UidS.is_empty live_vars then
       []
     else
@@ -813,7 +819,7 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
           ) rest []) @ edges_list)
       ) live_vars []
   in
-  let add_block_edges (graph:graph) (block:block) (locs : (uid * Alloc.loc) list) =
+  let add_block_edges (graph:graph) (block:block) (locs : (uid * Alloc.loc) list) : (uid * Alloc.loc) list * graph =
     let (_, assign_insns) = List.partition (fun (_, ins) -> (insn_assigns ins)) block.insns in 
     let new_graph = List.fold_left (
       fun (graph:graph) (uid, ins : uid * insn) -> 
@@ -825,7 +831,183 @@ let better_layout (f:Ll.fdecl) (live:liveness) : layout =
     let new_locs = List.fold_left (fun locs_list ((uid, _) : uid * insn) -> (uid, Alloc.LVoid)::locs_list) locs assign_insns in
     (new_locs, new_graph_term)
   in
-  failwith "Finish me plz"
+  let allocate_to_preference_graph (graph:graph) (uid:uid) (i:int) : graph =
+    match (arg_reg i) with
+    | Some reg -> UidM.update (
+      fun (x1, x2 : UidS.t * Alloc.loc list) ->
+        (x1, (Alloc.LReg reg)::x2)
+      ) uid graph
+    | None -> graph
+  in
+  let allocate_f_params (graph:graph) : graph * int = 
+    List.fold_left (
+      fun (graph, i : graph * int) (uid:uid) : (graph * int) -> 
+        (allocate_to_preference_graph graph uid i, (i + 1))
+    ) (graph, 0) f.f_param
+  in
+  let allocate_live_f_args (graph:graph) : graph =
+    let params = UidS.of_list (f.f_param) in
+    let (entry, _) = f.f_cfg in
+    let uid =
+      begin match entry.insns with
+      | [] -> fst entry.term
+      | ((u, _) :: _) -> u
+      end
+    in
+    let live_vars = live.live_in uid in
+    let dead_params = UidS.diff params live_vars in
+    let new_edges = UidS.fold (
+      fun (param:uid) (edges: (uid * uid) list) : (uid * uid) list ->
+        UidS.fold (
+          fun (dead_param:uid) current_edges ->
+            List.concat [[dead_param, param]; [param, dead_param]; current_edges]
+        ) dead_params edges
+      ) live_vars []
+    in
+    add_edges graph new_edges
+  in
+  let create_graph : (uid * Alloc.loc) list * graph =
+    let (entry_block, blocks_list) = f.f_cfg in
+    let (allocs_list, graph : (uid * Alloc.loc) list * graph) = 
+      add_block_edges (allocate_live_f_args initial_graph) entry_block [] 
+    in
+    let allocations, new_graph = List.fold_left (
+      fun (curr_allocs, curr_graph : (lbl * Alloc.loc) list * graph) (lbl, block : lbl * block) -> 
+        add_block_edges curr_graph block ((lbl, Alloc.LLbl (Platform.mangle lbl))::curr_allocs)
+    ) (allocs_list, graph) blocks_list 
+    in
+    allocations, fst (allocate_f_params new_graph)
+  in
+  (* Remove a node from the graph *)
+  let delete_node (node: uid * (UidS.t * Alloc.loc list)) (graph:graph) = 
+    let node_uid = fst node in
+    UidM.map (
+      fun (neighbors, allocs : UidS.t * Alloc.loc list) : (UidS.t * Alloc.loc list) ->
+        (UidS.remove node_uid neighbors), allocs
+    ) (UidM.remove node_uid graph)
+  in
+  (* 
+  This function recursively simplifies the register allocation in a given graph. 
+  It operates as follows:
+  1. If the graph is empty, it returns the list of colorless nodes and allocations.
+  2. If the graph is not empty, it creates a subset of nodes which have less than 7 adjacent nodes.
+  3. If there are no nodes with less than 7 neighbors, it identifies disconnected nodes in the graph. 
+     A disconnected node is chosen for allocation. 
+     If there are no disconnected nodes, a node is chosen from the graph. 
+     The chosen node is then deleted from the graph, and the function is called recursively with the updated graph, colorless nodes, and new allocations.
+  4. If there are nodes with less than 7 neighbors, it checks for nodes with any allocation. 
+     A node is then selected either from these nodes or from the nodes with less than 7 neighbors. 
+     The selected node is deleted from the graph, and the function is called recursively with the updated graph, the selected node added to the colorless nodes, and the current allocations.
+  The function ultimately returns a tuple of lists: 
+  - one list of tuples with each tuple containing a node and its corresponding neighbors and allocations, 
+  - and another list of tuples with each tuple containing a node and its allocation location.
+  *)
+  let rec simplify_allocation (graph:graph) (colorless_nodes_acc) (allocations_acc : (uid * Alloc.loc) list) : ((uid * (UidS.t * Alloc.loc list)) list * (uid * Alloc.loc) list) =
+    if UidM.is_empty graph then
+      (colorless_nodes_acc, allocations_acc)
+    else
+      (* Subset of the original graph where each node has less than 7 adjacent nodes. *)
+      let nodes_lt_7_neighbors:graph = 
+        UidM.filter (fun (_:uid) (nodes, _ : UidS.t * Alloc.loc list) : bool ->
+          (UidS.cardinal nodes) < 7
+        ) graph
+      in
+      (* Predicate used to dictate whether a node in the graph is disconnected. *)
+      let is_disconnected = fun (_:uid) (_, allocations : UidS.t * Alloc.loc list) : bool -> (List.length allocations) = 0 in
+      if UidM.is_empty nodes_lt_7_neighbors then
+        let disconnected_nodes = UidM.filter is_disconnected graph in
+        let selected_node =
+          if UidM.is_empty disconnected_nodes then
+            UidM.choose graph
+          else
+            UidM.choose disconnected_nodes
+        in
+        let new_allocations = (fst selected_node, spill ()) :: allocations_acc in 
+        simplify_allocation (delete_node selected_node graph) colorless_nodes_acc new_allocations
+      else
+        let nodes_any_alloc = UidM.filter is_disconnected nodes_lt_7_neighbors in
+        let selected_node =
+          if UidM.is_empty nodes_any_alloc then
+            UidM.choose nodes_lt_7_neighbors
+          else
+            UidM.choose nodes_any_alloc 
+        in 
+        let upd_graph = delete_node selected_node graph in
+        simplify_allocation upd_graph (selected_node :: colorless_nodes_acc) allocations_acc
+  in
+  (* 
+  All caller-saved registers, minus Rax and Rcx, used in x86 Assembly for the return value 
+  Basically, all registers available for allocation.
+  *)
+  let pal = LocSet.(caller_save 
+                    |> remove (Alloc.LReg Rax)
+                    |> remove (Alloc.LReg Rcx)                       
+                   )
+  in
+  (* "color" as a verb, not a noun
+  This function is responsible for coloring the variables' dependency graph.
+  The function `color_graph` takes as input a list of colorless nodes and an accumulator 
+  for the allocations (which is initially an empty list). The function processes 
+  each node in the list, assigning it a color that is not already assigned to its neighbors. 
+
+  It first computes the set of allocations already used by the neighbors. Then it computes 
+  the set of available allocations by taking the difference between the set of all possible 
+  allocations and the set of used allocations. If there are no available allocations, it raises 
+  an error.
+
+  Then it tries to assign a preferred allocation to the node. The preferred allocation is the 
+  first allocation in the node's allocation list that is also in the set of available allocations. 
+  If such an allocation exists, it is assigned to the node. Otherwise, an arbitrary allocation 
+  from the set of available allocations is chosen.
+
+  The function then recurses on the rest of the list, with the new allocation added to the 
+  accumulator. The base case of the recursion is when the list of colorless nodes is empty, 
+  in which case it simply returns the accumulator, which now contains the allocations for all nodes.
+
+  The function returns a list of tuples where each tuple contains a node and its corresponding allocation.
+  *)
+  let rec color_graph (colorless_nodes:(lbl * (UidS.t * Alloc.loc list)) list) (allocs_acc: ((uid * Alloc.loc) list)) =
+    match colorless_nodes with 
+    | [] -> allocs_acc
+    | ((node, (neighbors, node_allocs)) :: colorless_rest) ->
+      let used_allocs = UidS.fold (
+        fun (uid:uid) (locS:LocSet.t) : LocSet.t -> 
+          begin match List.assoc_opt uid allocs_acc with
+          | Some loc -> LocSet.add loc locS
+          | None -> locS
+          end 
+      ) neighbors LocSet.empty
+      in
+      let available_allocs = LocSet.diff pal used_allocs in
+      if LocSet.is_empty available_allocs then
+        failwith "No available allocations, what kind of code are you writing? :("
+      else
+        let pref = List.fold_left (fun (opt:Alloc.loc option) (loc:Alloc.loc) : Alloc.loc option ->
+          begin match opt with
+          | Some a -> Some a
+          | None ->
+            if LocSet.mem loc available_allocs then 
+              Some loc 
+            else
+              None
+          end
+        ) None node_allocs
+        in
+        let new_allocation = 
+          begin match pref with
+          | Some x -> x
+          | None -> LocSet.choose available_allocs
+          end
+        in
+        color_graph colorless_rest ((node, new_allocation) :: allocs_acc)
+  in
+  let allocs, graph = create_graph in
+  let nodes, allocs = simplify_allocation graph [] allocs in
+  let final_allocation = color_graph nodes allocs in
+  {
+    uid_loc = (fun (x:uid) -> List.assoc x final_allocation); 
+    spill_bytes = !n_spill * 8
+  }
 
 (* register allocation options ---------------------------------------------- *)
 (* A trivial liveness analysis that conservatively says that every defined
